@@ -27,6 +27,7 @@ targets:
     platform: macOS
     sources:
       - path: Sources/Metria
+      - path: Resources
     dependencies:
       - target: MetriaCore
       - package: Sparkle
@@ -52,8 +53,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.metria.app
         PRODUCT_NAME: Metria
         MARKETING_VERSION: 0.1.6
+        CURRENT_PROJECT_VERSION: 1
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         SWIFT_VERSION: "5.9"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Metria
         INFOPLIST_KEY_LSUIElement: YES

@@ -171,10 +171,13 @@ To create a local macOS application archive for installation:
 bash apps/macos-native/scripts/package-macos.sh
 ```
 
+Packaging requires Xcode 26 or later because the app icon is authored with
+Icon Composer. The Xcode asset compiler also generates fallback icon assets for
+macOS 13–25.
+
 To build the Xcode application without Apple Developer signing credentials:
 
 ```sh
-xcodegen generate
 xcodegen generate --spec apps/macos-native/project.yml
 xcodebuild -project apps/macos-native/Metria.xcodeproj -scheme Metria -configuration Release -derivedDataPath .build/xcode CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 ```
@@ -212,6 +215,7 @@ Electron artifacts are written to `apps/electron/release/`. macOS packaging is n
 - `apps/macos-native/Sources/Metria/MetriaApp.swift` — native macOS entrypoint, AppKit coordinator, pairing, and views.
 - `apps/macos-native/Sources/Metria/Providers/` — native macOS provider implementations and credential readers.
 - `apps/macos-native/Sources/MetriaCore/UsageStore.swift` — native usage state, provider seam, and refresh/retry logic.
+- `apps/macos-native/Resources/AppIcon.icon` — Icon Composer source for the native app icon.
 - `apps/macos-native/scripts/package-macos.sh` — reproducible native macOS app bundle and archive builder.
 
 ### Electron version

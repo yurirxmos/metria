@@ -19,13 +19,16 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-15-intel
+          - runner: macos-26-intel
             arch: intel
-          - runner: macos-14
+          - runner: macos-26
             arch: apple-silicon
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Verify Swift package
+        run: swift build
 
       - name: Configure Apple signing
         env:
@@ -73,6 +76,14 @@ jobs:
         run: |
           test -n "$SPARKLE_PUBLIC_ED_KEY"
           bash apps/macos-native/scripts/package-macos.sh
+
+      - name: Validate app bundle
+        run: |
+          test -f dist/Metria.app/Contents/Resources/Assets.car
+          test -d dist/Metria.app/Contents/Frameworks/Sparkle.framework
+          test -f dist/Metria.app/Contents/Resources/app.css
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' dist/Metria.app/Contents/Info.plist)" = "13.0"
+          lipo -archs dist/Metria.app/Contents/MacOS/Metria | grep -qx "$(uname -m)"
 
       - name: Rename archive
         run: mv "dist/Metria-${{ inputs.version || github.ref_name }}-$(uname -m).zip" "dist/Metria-${{ inputs.version || github.ref_name }}-${{ matrix.arch }}.zip"

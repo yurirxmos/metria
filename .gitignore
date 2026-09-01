@@ -7,6 +7,7 @@ node_modules/
 /apps/electron/dist/
 /apps/electron/release/
 /apps/electron/node_modules/
+/icon-composer/Icon Exports/
 
 # wrangler files
 .wrangler

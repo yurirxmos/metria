@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0A4C0E5A9D184E7CA2B12601 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 0A4C0E5A9D184E7CA2B12602 /* AppIcon.icon */; };
 		1F928336732F72EF903CE215 /* LocalPWAServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 942FF095F80398F2F48468E8 /* LocalPWAServer.swift */; };
 		31F56B15827398A3510322E7 /* CodexProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */; };
 		46A2C87091DB2E55D1B82616 /* MetriaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC404DE64C320E52402D468 /* MetriaApp.swift */; };
@@ -52,6 +53,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0A4C0E5A9D184E7CA2B12602 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexProvider.swift; sourceTree = "<group>"; };
 		17B8670774860D40198385E3 /* PairingSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSecret.swift; sourceTree = "<group>"; };
 		18B16A90CF8351DF99C63A8A /* LocalNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNetwork.swift; sourceTree = "<group>"; };
@@ -142,9 +144,18 @@
 		DEE7314F484D35A0B765790F = {
 			isa = PBXGroup;
 			children = (
+				0A4C0E5A9D184E7CA2B12603 /* Resources */,
 				345983A9F3EF634D3030AFAB /* Sources */,
 				C0EAFE8D810C80E0C9591AB7 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		0A4C0E5A9D184E7CA2B12603 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				0A4C0E5A9D184E7CA2B12602 /* AppIcon.icon */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -157,6 +168,7 @@
 				280AF565B3B1FACCD3D5541A /* Sources */,
 				D9D2A412C18D8DF946C8C770 /* Frameworks */,
 				FCD8448EC65257656112105B /* Embed Frameworks */,
+				0A4C0E5A9D184E7CA2B12604 /* Resources */,
 				A54BE8E112C3500CF036C0AE /* Copy bundled resources */,
 			);
 			buildRules = (
@@ -223,6 +235,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		0A4C0E5A9D184E7CA2B12604 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A4C0E5A9D184E7CA2B12601 /* AppIcon.icon in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXShellScriptBuildPhase section */
 		A54BE8E112C3500CF036C0AE /* Copy bundled resources */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -241,7 +264,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "RESOURCE_DIRECTORY=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nmkdir -p \"${RESOURCE_DIRECTORY}\"\ncp \"${SRCROOT}\"/Assets/*.png \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/app.css \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/app.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/icon.svg \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/index.html \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/jsQR.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/manifest.json \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/pairing.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/scanner.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/sw.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/wordlist.js \"${RESOURCE_DIRECTORY}/\"\n";
+			shellScript = "RESOURCE_DIRECTORY=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nmkdir -p \"${RESOURCE_DIRECTORY}\"\ncp \"${SRCROOT}\"/../../Assets/*.png \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/app.css \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/app.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/icon.svg \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/index.html \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/jsQR.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/manifest.json \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/pairing.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/scanner.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/sw.js \"${RESOURCE_DIRECTORY}/\"\ncp \"${SRCROOT}\"/../pwa/public/wordlist.js \"${RESOURCE_DIRECTORY}/\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -357,6 +380,7 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Metria;
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -367,7 +391,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.5;
+				MARKETING_VERSION = 0.1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.metria.app;
 				PRODUCT_NAME = Metria;
 				SDKROOT = macosx;
@@ -411,6 +435,7 @@
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Metria;
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -421,7 +446,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.5;
+				MARKETING_VERSION = 0.1.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.metria.app;
 				PRODUCT_NAME = Metria;
 				SDKROOT = macosx;
