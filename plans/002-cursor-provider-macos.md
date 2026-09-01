@@ -41,10 +41,16 @@ keys under the `cursorAuth/` prefix. Metria therefore needs a small read-only
 SQLite reader before it can have a Cursor provider at all.
 
 Read that database through the system `SQLite3` module (available in the macOS
-SDK, so no new package dependency), against a **copy** of the database rather
-than the live file. Do not add a SQLite package, do not shell out to
-`/usr/bin/sqlite3`, and do not attempt to decrypt anything Cursor chose to
-encrypt.
+SDK, so no new package dependency), opening the live file read-only via a
+`file:...?mode=ro` URI. Do not add a SQLite package and do not shell out to
+`/usr/bin/sqlite3`.
+
+The credential itself is a plain JWT in `ItemTable` under
+`cursorAuth/accessToken`; usage comes from the same Connect-RPC endpoint the
+Cursor dashboard calls, `POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage`,
+which answers with `planUsage.totalPercentUsed` and the billing-cycle bounds —
+exactly the percent-plus-reset-date shape Metria's cards already render. Both
+facts are corroborated by shipping third-party tools; see "Evidence" below.
 
 ## Why this matters
 
@@ -94,88 +100,106 @@ vendor does not publish.
    (`apps/pwa/public/app.js:71`), and `Package.swift:19` excludes each PWA logo
    individually.
 
-## Phase 0 — Credential and endpoint discovery (BLOCKING GATE)
+## Phase 0 — Confirm the mechanism on the target machine (short)
 
-Runs on a Mac with Cursor installed and signed in. Produces evidence, not code.
+The mechanism is no longer an open question; it is documented in the "Evidence"
+section at the end of this plan and implemented by shipping third-party tools.
+What remains is confirming it against the Cursor version the developer is
+running, because none of it is a published contract.
 
-1. Confirm the database and inspect the auth keys:
+1. Confirm the token is present and readable:
    ```sh
-   DB=~/"Library/Application Support/Cursor/User/globalStorage/state.vscdb"
-   sqlite3 "$DB" "select key from ItemTable where key like 'cursorAuth%' or key like '%cursor%' order by key;"
+   sqlite3 "$HOME/Library/Application Support/Cursor/User/globalStorage/state.vscdb" \
+     "SELECT key FROM ItemTable WHERE key LIKE 'cursorAuth/%';"
    ```
-   Expected keys include `cursorAuth/accessToken`, `cursorAuth/refreshToken`,
-   `cursorAuth/cachedEmail`, and a membership/plan key. Record the exact key
-   names and the shape of each value; do not record the values themselves.
-2. Determine whether the access token is stored in cleartext in `ItemTable`, or
-   only as an Electron `safeStorage` blob backed by the "Cursor Safe Storage"
-   Keychain item.
-   - **Gate A**: the token is readable without decrypting anything Cursor
-     encrypted. If it is not, **stop here**. Record the finding and treat the
-     team Admin API path (below) as the only remaining option; do not implement
-     Keychain-derived decryption of another app's secrets.
-3. Establish which usage endpoint answers for a signed-in individual account,
-   and capture one anonymized response body per candidate as a fixture:
-   - `GET https://cursor.com/api/usage?user=<userId>` with
-     `Cookie: WorkosCursorSessionToken=<userId>%3A%3A<token>`
-   - `GET https://cursor.com/api/auth/me` (identity, user id, plan)
-   - the monthly-invoice / filtered-usage-events dashboard endpoints, for
-     usage-based ("included usage" in dollars) plans
-   - `https://api.cursor.com/teams/daily-usage-data` — the **documented** Admin
-     API, but it needs a team admin key that individual accounts do not have
-   - **Gate B**: at least one endpoint returns, for an individual account, both
-     a quota position (used vs. limit, or a percentage) and a reset boundary. If
-     none does, stop: Metria cannot render a card it cannot compute.
-4. Record whether the token needs a refresh flow, and if so which endpoint
-   performs it. If it does, mirror `ClaudeProvider`'s 401-then-refresh-then-retry
-   shape (`apps/macos-native/Sources/Metria/Providers/ClaudeProvider.swift:12-18`),
-   but never write back into Cursor's database.
-5. Write the findings into a "Decision log" section at the bottom of this file,
-   with the date and the Cursor version they were observed on.
-
-Phases 1-5 are authorized only after Gates A and B both pass.
+   Expect `cursorAuth/accessToken`, `cursorAuth/refreshToken`,
+   `cursorAuth/cachedEmail`, and a membership key. The access token is a plain
+   JWT string in `ItemTable`, not an Electron `safeStorage` blob.
+2. Confirm the usage endpoint answers for this account:
+   ```sh
+   TOKEN=$(sqlite3 "$HOME/Library/Application Support/Cursor/User/globalStorage/state.vscdb" \
+     "SELECT value FROM ItemTable WHERE key='cursorAuth/accessToken';")
+   curl -s -X POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -H "Connect-Protocol-Version: 1" \
+     -d '{}'
+   ```
+   Expect `planUsage.totalPercentUsed` and the `billingCycleStart` /
+   `billingCycleEnd` millisecond strings.
+3. Record the Cursor version and the response shape in the decision log. If the
+   account is request-based (a Team plan) rather than spend-based,
+   `planUsage.totalPercentUsed` may be absent — see Phase 2's fallback.
+4. **Gate**: both commands answer. If the token is missing or the endpoint
+   refuses it, stop and record which one failed; do not guess a replacement.
 
 ## Phase 1 — Read-only access to Cursor's state database
 
 New file `apps/macos-native/Sources/Metria/Providers/CursorStateStore.swift`.
 
-- `import SQLite3` (system module, no package dependency).
-- Copy `state.vscdb` — plus `-wal` and `-shm` siblings when present — into
-  `FileManager.default.temporaryDirectory` before opening, then delete the copy.
-  Cursor holds the live database open in WAL mode; copying avoids both a write
-  attempt against another app's file and the stale reads that
-  `immutable=1` would produce.
-- Open the copy with `sqlite3_open_v2(path, &handle, SQLITE_OPEN_READONLY, nil)`
-  and read with a prepared `SELECT value FROM ItemTable WHERE key = ?1`. Treat
-  values as `BLOB`/UTF-8 text and decode JSON only where Phase 0 recorded JSON.
-- Surface every failure as `ProviderError.unavailable` rather than trapping; a
-  missing table, a schema change, or a locked file must degrade to an unavailable
-  provider, never a crash.
-- Keep the type free of AppKit and provider-specific logic so it can be tested
-  against a synthetic database.
+- `import SQLite3` — the system module in the macOS SDK, so no package
+  dependency.
+- Open **read-only through a URI**, without copying the file:
+  `file:<path>?mode=ro` first, falling back to `file:<path>?immutable=1`, with
+  flags `SQLITE_OPEN_READONLY | SQLITE_OPEN_URI`. This works while Cursor is
+  running and holding the WAL; a plain read-only open of the live file is the
+  proven path (see Evidence), so do not copy the database unless step 2 of
+  Phase 0 shows otherwise.
+- Read with a prepared `SELECT value FROM ItemTable WHERE key = ? LIMIT 1`.
+- Expose `readItem(_ key: String) -> String?` and nothing else; return `nil` on
+  every failure (missing file, missing table, missing key) so the provider maps
+  it to one clear `ProviderError.unavailable`.
+- Keep the type free of AppKit so it can be exercised against a synthetic
+  database with the same schema.
 - **Gate**: `swift build` passes and a throwaway harness reads a key from a
-  hand-made SQLite file with the same schema.
+  hand-made SQLite file.
 
 ## Phase 2 — The provider
 
 New file `apps/macos-native/Sources/Metria/Providers/CursorProvider.swift`,
 modeled on `OpenCodeGoProvider`.
 
-- `isAvailable`: `state.vscdb` exists **and** the auth key recorded in Phase 0 is
+- `isAvailable`: `state.vscdb` exists **and** `cursorAuth/accessToken` is
   present. File existence alone is true for anyone who ever opened Cursor once,
   which would show a permanently failing card.
 - `setupHint`: "Sign in to Cursor to make usage available."
-- `fetch()`:
-  - read the credential through `CursorStateStore`;
-  - call the Phase 0 endpoint with the same three-attempt / `Retry-After` /
-    `ProviderError.http(status)` handling the other providers use
-    (`apps/macos-native/Sources/Metria/Providers/OpenCodeGoProvider.swift:28-46`);
-  - map the response to windows. Name them from the data, not from the other
-    providers: a request-quota plan yields "This month" with the billing-cycle
-    reset; a usage-based plan yields spend against the included budget. If both
-    are present, emit both, most-urgent first — `primary` is `windows.first`
-    (`apps/macos-native/Sources/MetriaCore/UsageStore.swift:31`) and it is what
-    the rail and menu bar show;
-  - return `.failed(kind, message, retryAfter:)` on every error path.
+- Before the request, decode the JWT's `exp` claim (base64url of the second
+  segment, no signature verification — Metria is not validating the token, only
+  avoiding a pointless call) and fail early with a "sign in to Cursor again"
+  message when it has passed.
+- Primary request:
+  ```
+  POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage
+  Authorization: Bearer <cursorAuth/accessToken>
+  Content-Type: application/json
+  Connect-Protocol-Version: 1
+  body: {}
+  ```
+  This is Cursor's own dashboard call over Connect RPC's JSON encoding, so
+  `URLSession` and `JSONDecoder` are enough — no protobuf or Connect library.
+  Reuse the existing three-attempt / `Retry-After` / `ProviderError.http(status)`
+  handling (`apps/macos-native/Sources/Metria/Providers/OpenCodeGoProvider.swift:28-46`).
+- Map the response:
+  - `planUsage.totalPercentUsed` → the percent of the primary window;
+  - `billingCycleEnd` (a **string** of milliseconds) → `resetDate`;
+  - title the window from the cycle, e.g. "This cycle", not "Current session" —
+    Cursor's quota is a billing period, and reusing Claude's five-hour label
+    would misdescribe it;
+  - `planUsage.autoPercentUsed` and `apiPercentUsed` are available for a second
+    window if the card should split included vs. API usage; `totalSpend` is in
+    cents.
+- Fallback for request-based (Team) plans, where `planUsage.totalPercentUsed`
+  can be absent: `GET https://cursor.com/api/usage?user=<userId>` with
+  `Cookie: WorkosCursorSessionToken=<userId>%3A%3A<accessToken>`, where
+  `<userId>` is the `user_...` half of the JWT's `sub` claim
+  (`auth0|user_XXXXXXXX`). It returns per-model `numRequests` /
+  `maxRequestUsage` plus `startOfMonth`; derive the percent from those two.
+  Implement this only if Phase 0 shows the primary call returning no percentage
+  for the account at hand — do not build both paths speculatively.
+- **No refresh flow.** Cursor's session JWT is long-lived and Metria has no
+  documented refresh grant for it; on 401/403, report "sign in to Cursor again"
+  and re-read the database on the next refresh. Never write to Cursor's
+  database.
 - Register the instance in `ProviderRegistry.makeProviders()`.
 
 ## Phase 3 — Kind, presentation, and assets
@@ -225,10 +249,13 @@ Without this, every current user gets a Cursor entry that is permanently off.
    Mitigation: one provider, one decode site, failures isolated per provider by
    `UsageStore`; the card degrades to an error string rather than breaking the
    app.
-2. **Credential storage moves.** Cursor may move the token into `safeStorage` in
-   any release. Mitigation: `isAvailable` checks the key, not the file, so the
-   provider silently drops out instead of failing loudly; Gate A is re-run
-   whenever that happens.
+2. **Credential storage moves.** The token is plaintext in `ItemTable` today,
+   but Cursor could move it into Electron `safeStorage` or the Keychain in any
+   release — its `cursor-agent` CLI already keeps a `cursor-access-token`
+   Keychain item. Mitigation: `isAvailable` checks the key, not the file, so the
+   provider drops out quietly instead of failing loudly, and the Keychain item
+   is the obvious second source to add if that happens (`KeychainReader`
+   already exists for Claude).
 3. **Plan shapes differ.** Pro, Business, and usage-based accounts report
    different quantities. Mitigation: derive window titles from the response;
    never render a percentage Metria had to invent.
@@ -247,16 +274,20 @@ Without this, every current user gets a Cursor entry that is permanently off.
   spawning for a point read is worse than a prepared statement.
 - **Parsing the SQLite file format by hand** to avoid the import: rejected as
   unmaintainable.
-- **Decrypting Cursor's `safeStorage` blob via the "Cursor Safe Storage" Keychain
-  item**: rejected. Metria reads credentials other apps left readable; it does
-  not defeat another app's encryption.
+- **Decrypting anything Cursor chose to encrypt.** Not needed today (the token
+  is plaintext), and rejected as an approach: Metria reads credentials other
+  apps left readable; it does not defeat another app's encryption. If Cursor
+  ever encrypts the token, add the `cursor-agent` Keychain item as a source or
+  drop the provider — do not decrypt.
 - **Counting local Cursor session files** the way `CodexProvider` falls back
   (`apps/macos-native/Sources/Metria/Providers/CodexProvider.swift:54-56`):
   rejected as the primary source. Cursor's local chat storage records requests,
   not the account quota, so any percentage would be fabricated.
-- **Shipping the team Admin API only**: rejected as the default, since it
-  requires a team admin key. It remains the documented fallback if Gate A fails,
-  as a separate, opt-in "paste your admin key" plan.
+- **Cursor's official team Admin API** (`https://api.cursor.com/teams/...`):
+  rejected as the default. It is the only *documented* API, but it needs a team
+  admin key that individual accounts do not have, so it cannot serve Metria's
+  typical user. Keep it as a separate, opt-in "paste your admin key" plan if
+  team dashboards are ever wanted.
 
 ## Verification
 
@@ -274,7 +305,46 @@ Manual checks on a Mac with Cursor signed in:
 4. The notch rail, menu bar labels, dashboard, and paired PWA all show the Cursor
    logo and percentage.
 
+## Evidence
+
+Researched 2026-09-01. None of this is a published Cursor contract; all of it is
+corroborated by more than one independently maintained tool.
+
+- **Token location and schema** — `state.vscdb`, table `ItemTable`, keys
+  `cursorAuth/accessToken`, `cursorAuth/refreshToken`, `cursorAuth/cachedEmail`;
+  paths are `~/Library/Application Support/Cursor/User/globalStorage/` on macOS,
+  `%APPDATA%\Cursor\User\globalStorage\` on Windows, and
+  `~/.config/Cursor/User/globalStorage/` on Linux.
+  Sources: [eisbaw/cursor_api_demo](https://github.com/eisbaw/cursor_api_demo),
+  [Dwtexe/cursor-stats#36](https://github.com/Dwtexe/cursor-stats/issues/36),
+  [Tendo33/cursor-usage-tracker](https://github.com/Tendo33/cursor-usage-tracker).
+- **The token is a plain JWT, not an encrypted blob** — read today by a plain
+  `sqlite3 ... "SELECT value FROM ItemTable WHERE key='cursorAuth/accessToken'"`.
+  Note that this is also why it is a known exposure: any Cursor extension can
+  read it ([LayerX, "CursorJacking"](https://layerxsecurity.com/blog/cursorjacking-every-cursor-user-is-vulnerable-to-api-key-theft-by-rogue-extensions/)).
+  Metria only reads it and sends it to Cursor's own host.
+- **Usage endpoint** — `POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage`
+  with `Authorization: Bearer`, `Content-Type: application/json`,
+  `Connect-Protocol-Version: 1`, body `{}`; response carries
+  `planUsage.totalPercentUsed`, `autoPercentUsed`, `apiPercentUsed`,
+  `totalSpend` (cents), and `billingCycleStart` / `billingCycleEnd` as
+  millisecond strings.
+  Source: [cursor-checker/macos](https://github.com/cursor-checker/macos) —
+  `Sources/CursorChecker/Services/CursorUsageClient.swift`, a Swift menu-bar app
+  released 2026-07-28 that does precisely this, including the read-only
+  `mode=ro` / `immutable=1` SQLite open and the JWT `exp` pre-check.
+- **Request-based plans** — `GET https://cursor.com/api/usage?user=<userId>` with
+  `Cookie: WorkosCursorSessionToken=<userId>%3A%3A<token>` returns per-model
+  `numRequests` / `maxRequestUsage` / `startOfMonth`; `<userId>` is the
+  `user_...` half of the JWT `sub` (`auth0|user_...`).
+  Sources: [robinebers/openusage#244](https://github.com/robinebers/openusage/issues/244),
+  [Tendo33/cursor-usage-tracker](https://github.com/Tendo33/cursor-usage-tracker).
+- **Prior art at Metria's exact scope** — [openusage](https://github.com/robinebers/openusage)
+  ships Cursor alongside Claude, Codex, and OpenCode, reading credentials
+  already on the machine
+  ([provider doc](https://github.com/robinebers/openusage/blob/main/docs/providers/cursor.md)).
+
 ## Decision log
 
-- _(Phase 0 findings go here: Cursor version, key names, endpoint chosen,
-  response shape, and the Gate A / Gate B verdicts.)_
+- _(Phase 0 confirmation goes here: Cursor version, keys observed, endpoint
+  response shape, and whether the account needed the request-based fallback.)_

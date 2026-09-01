@@ -1,8 +1,9 @@
 # Plan 003: Add a Cursor usage provider to the Electron app
 
 > **Executor instructions**: Follow this plan in order. It reuses the credential
-> and endpoint findings recorded in Plan 002's decision log; do not re-derive
-> them here, and do not start before Plan 002's Gates A and B have passed.
+> and endpoint findings recorded in Plan 002's "Evidence" section and decision
+> log; do not re-derive them here, and do not start before Plan 002's Phase 0
+> confirmation has passed on a real machine.
 > Windows and Linux behavior must be exercised on those operating systems —
 > `apps/electron/README.md` and Plan 001 already require this, and Cursor's
 > paths differ per platform.
@@ -18,8 +19,9 @@
 - **Effort**: M (one provider, one SQLite decision, per-platform paths)
 - **Risk**: MEDIUM (same undocumented endpoint as Plan 002, plus a new runtime
   dependency decision and the WSL boundary)
-- **Depends on**: Plan 002 phase 0 (credential location, endpoint, response
-  shape). Implementation can otherwise proceed in parallel.
+- **Depends on**: Plan 002 phase 0 (confirmation of credential location,
+  endpoint, and response shape). Implementation can otherwise proceed in
+  parallel.
 - **Category**: feature
 - **Planned at**: commit `a16b53b`, 2026-09-01
 
@@ -36,12 +38,21 @@ enough that it does not justify piping a binary database through
 `wsl.exe` before the host path has shipped. Phase 5 covers WSL if it is ever
 wanted.
 
-Read the database with **`sql.js`** (SQLite compiled to WebAssembly), not with a
-native module. `better-sqlite3` would drag `electron-rebuild` and per-platform
-native artifacts into a build that currently has zero native dependencies
-(`apps/electron/package.json:29-34`), and `node:sqlite` is not dependable on
-Electron 37's Node 22 runtime without a flag. `sql.js` reads a `Buffer` the main
-process already has and stays inside the existing pure-JS packaging.
+Read the database with **`node:sqlite`**, Node's built-in module, and fall back
+to **`sql.js`** (SQLite compiled to WebAssembly) only if the packaged build
+cannot load it. `node:sqlite` stopped requiring `--experimental-sqlite` in Node
+22.13 and is present in Electron 37's runtime, so the first choice costs no
+dependency at all; it is still marked experimental, and Electron 37.2.0 shipped
+a "No such binding: sqlite" regression that was later fixed, which is exactly
+why Phase 2 gates this against a **packaged** build rather than `npm run dev`.
+`better-sqlite3` is rejected outright: it would drag `electron-rebuild` and
+per-platform native artifacts into a build that today has zero native
+dependencies (`apps/electron/package.json:29-34`).
+
+The credential and the endpoint are the same as Plan 002: a plain JWT at
+`cursorAuth/accessToken` in `ItemTable`, and
+`POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage`
+returning `planUsage.totalPercentUsed` with millisecond billing-cycle bounds.
 
 ## Why this matters
 
@@ -100,12 +111,16 @@ platform, including the `XDG_CONFIG_HOME` override, following the existing style
 
 ## Phase 2 — Reading the state database
 
-Add `sql.js` to `dependencies` and a `readCursorAuth(path, key)` helper in a new
+Add a `readCursorItem(path, key)` helper in a new
 `apps/electron/src/main/cursor-state.ts`:
 
-- copy the database (and any `-wal` / `-shm` siblings) to `app.getPath("temp")`,
-  read the copy, delete it — Cursor holds the live file open in WAL mode;
-- `SELECT value FROM ItemTable WHERE key = ?`, decode the value as UTF-8;
+- open the live file **read-only** — `new DatabaseSync(path, { readOnly: true })`
+  from `node:sqlite`; Cursor holds the WAL open and a read-only handle coexists
+  with it (Plan 002's Evidence shows the same open working from Swift). Only if
+  that proves unreliable, fall back to reading the file into a `Buffer` and
+  handing it to `sql.js`, whose `locateFile` must point at the bundled
+  `sql-wasm.wasm`;
+- `SELECT value FROM ItemTable WHERE key = ? LIMIT 1`, decode the value as UTF-8;
 - return `undefined` for every failure mode (missing file, missing table, missing
   key, malformed value) so the provider can throw one clear message instead of
   leaking SQLite errors into the card;
@@ -113,14 +128,15 @@ Add `sql.js` to `dependencies` and a `readCursorAuth(path, key)` helper in a new
   a fixture database, the way `parseCodexAuth` and `parseOpenCodeGoWindows` are
   (`apps/electron/src/main/providers.ts:196-231`).
 
-Verify the WASM asset is present in the packaged app: `sql.js` loads
-`sql-wasm.wasm` at runtime, so it must be unpacked from the asar or bundled
-alongside the main process output. Check `apps/electron/electron-builder.yml`
-and add `asarUnpack` if needed.
+If the `sql.js` fallback is taken, verify the WASM asset survives packaging: it
+is loaded at runtime, so it must be unpacked from the asar or copied beside the
+main-process output. Check `apps/electron/electron-builder.yml` and add
+`asarUnpack` if needed.
 
-- **Gate**: `npm run check` passes, and a packaged build (`npm run package`) can
-  still read a fixture database. A `sql.js` that only works in `npm run dev` is a
-  failed gate, not a detail to fix later.
+- **Gate**: `npm run check` passes, **and** a packaged build (`npm run package`)
+  reads a fixture database on Windows and on Linux. A SQLite path that only works
+  under `npm run dev` is a failed gate, not a detail to fix later — this is the
+  single most likely thing to break in an installer.
 
 ## Phase 3 — The provider
 
@@ -130,18 +146,29 @@ existing three, and register it in the `ProviderService` constructor
 
 - `hint`: "Sign in to Cursor to make usage available."
 - `hasHostCredentials()`: the state database exists **and** carries the auth key.
-- `fetchHost()`: read the credential, call the Plan 002 endpoint through the
-  existing `requestWithRetry` (`apps/electron/src/main/providers.ts:180-201`) so
-  timeout, 429 and `Retry-After` behavior stay identical to the other providers,
-  then map the payload with an exported pure `parseCursorWindows(data)`.
+- `fetchHost()`: read the credential, check the JWT `exp` claim, then call
+  ```
+  POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage
+  Authorization: Bearer <token>
+  Content-Type: application/json
+  Connect-Protocol-Version: 1
+  body: {}
+  ```
+  `requestWithRetry` (`apps/electron/src/main/providers.ts:180-201`) is
+  GET-only today; extend it with optional method/body rather than writing a
+  second fetch helper, so timeout, 429 and `Retry-After` behavior stay identical
+  across providers. Map the payload with an exported pure
+  `parseCursorWindows(data)`: `planUsage.totalPercentUsed` for the percent and
+  `billingCycleEnd` (a millisecond **string**) for the reset date. On 401/403,
+  throw "Sign in to Cursor again." — there is no refresh grant to use.
 - `fetchWsl()`: throw `new Error("Cursor usage is read from the Windows or Linux
   host installation.")` until Phase 5.
 - Window titles come from the response, as in Plan 002 — the first window is what
   the widget ring and tray show (`apps/electron/src/renderer/widget.tsx:16`).
 
 Add unit tests in `apps/electron/src/test/providers.test.ts` for
-`parseCursorWindows`: a request-quota payload, a usage-based payload, and a
-malformed payload.
+`parseCursorWindows`: a spend-based payload, a payload missing `planUsage`
+(request-based Team plans, per Plan 002's fallback), and a malformed payload.
 
 ## Phase 4 — Types, WSL typing obligation, and presentation
 
@@ -179,12 +206,13 @@ Do not start this without a user actually running Cursor inside WSL.
 
 1. **Undocumented endpoint** — same as Plan 002, same mitigation: one decode
    site, per-provider error isolation (`apps/electron/src/main/providers.ts:41-44`).
-2. **A new runtime dependency in a dependency-light app.** `sql.js` is ~1.5 MB of
-   WASM. Mitigation: load it lazily inside `cursor-state.ts` so it costs nothing
-   until a user actually has Cursor installed.
-3. **Packaging.** The WASM asset is the most likely thing to work in development
-   and fail in an installer. Mitigation: the Phase 2 gate tests a packaged build,
-   not a dev run.
+2. **SQLite availability in the packaged runtime.** `node:sqlite` is still
+   experimental and had an Electron 37.2.0 regression; the `sql.js` fallback is
+   ~1.5 MB of WASM with its own packaging trap. Mitigation: the Phase 2 gate
+   tests a packaged build on both target platforms, and whichever path is taken
+   is loaded lazily so it costs nothing for users without Cursor.
+3. **Packaging.** Whichever SQLite path is chosen is the most likely thing to
+   work in development and fail in an installer. Mitigation: same gate.
 4. **Total-record types.** `POPULATION_BY_KIND` and `ACCENT` will fail to compile
    until updated; that is the intended safety net, not an obstacle.
 5. **Platform drift.** Cursor's Linux root is config-based, not data-based;
@@ -196,8 +224,10 @@ Do not start this without a user actually running Cursor inside WSL.
 - **`better-sqlite3`**: rejected. A native module means `electron-rebuild`,
   per-platform prebuilds, and CI changes on a project that currently ships no
   native dependencies.
-- **`node:sqlite`**: rejected for now. It needs a flag on Electron 37's Node 22
-  runtime; revisit when the app moves to an Electron on Node 24.
+- **`sql.js` as the first choice**: rejected in favor of `node:sqlite`, which is
+  unflagged since Node 22.13 and needs no dependency and no WASM asset. `sql.js`
+  stays as the documented fallback, and is what comparable tools use today
+  (for example [Tendo33/cursor-usage-tracker](https://github.com/Tendo33/cursor-usage-tracker)).
 - **Shelling out to a system `sqlite3` binary**: rejected. Not present by default
   on Windows, and it would add a spawn to every refresh.
 - **Sharing the reader with the macOS app**: rejected, as Plan 001 already
@@ -225,3 +255,17 @@ Manual checks, on each of Windows and Linux with Cursor signed in:
    picker offers no WSL option for Cursor.
 4. With Cursor not installed at all, nothing regresses and no SQLite/WASM code is
    loaded.
+
+## Evidence
+
+See Plan 002's "Evidence" section for the credential location, the endpoint, the
+response shape, and the request-based fallback, with sources. Electron-specific
+points:
+
+- `node:sqlite` no longer requires `--experimental-sqlite` as of Node 22.13 and
+  is available in Electron 37, with a fixed 37.2.0 regression
+  ([electron#47671](https://github.com/electron/electron/issues/47671),
+  [Node.js v22 SQLite docs](https://nodejs.org/docs/latest-v22.x/api/sqlite.html)).
+- The `sql.js` fallback with an explicit `locateFile` is the pattern used by
+  [Tendo33/cursor-usage-tracker](https://github.com/Tendo33/cursor-usage-tracker),
+  which reads the same key from the same database on all three platforms.

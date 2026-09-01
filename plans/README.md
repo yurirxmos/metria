@@ -14,11 +14,12 @@ superseded by the completed repository split described below.
 - The framework decision gate in phase 1 blocks all production-port work. Do
   not start platform UI, credential migration, or release automation until the
   proof of concept passes on all three operating systems.
-- Plan 002 phase 0 is a research gate shared by both Cursor plans: it must
-  establish, on a real machine, where Cursor keeps its credential and which
-  usage endpoint answers for an individual account. Plan 003 consumes those
-  findings and must not re-derive them. Once that gate passes, 002 and 003 can
-  be implemented in parallel; neither blocks the other.
+- Plan 002 phase 0 is a confirmation step shared by both Cursor plans: the
+  credential location and the usage endpoint are documented in Plan 002's
+  Evidence section, but they are not a published Cursor contract, so they must
+  be confirmed against the Cursor version at hand before code is written. Plan
+  003 consumes those findings and must not re-derive them. Once confirmed, 002
+  and 003 can be implemented in parallel; neither blocks the other.
 
 ## Findings considered and rejected
 
