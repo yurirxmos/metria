@@ -346,5 +346,14 @@ corroborated by more than one independently maintained tool.
 
 ## Decision log
 
-- _(Phase 0 confirmation goes here: Cursor version, keys observed, endpoint
-  response shape, and whether the account needed the request-based fallback.)_
+- **Phase 0 confirmed 2026-09-01** on Cursor 3.18.9 (macOS). `state.vscdb`
+  contains `cursorAuth/accessToken`, `cursorAuth/cachedEmail`,
+  `cursorAuth/cachedScopedProfile`, `cursorAuth/cachedSignUpType`,
+  `cursorAuth/onboardingDate`, `cursorAuth/refreshToken`,
+  `cursorAuth/stripeMembershipAuthId`, `cursorAuth/stripeMembershipType`,
+  `cursorAuth/stripeSubscriptionStatus`. `POST
+  .../GetCurrentPeriodUsage` answered with `planUsage.totalPercentUsed: 0`,
+  `autoPercentUsed: 0`, `apiPercentUsed: 0`, plus `billingCycleStart` /
+  `billingCycleEnd` millisecond strings — a spend-based plan, so the
+  request-based (Team) fallback in Phase 2 was **not** implemented; add it
+  later if an account without `planUsage.totalPercentUsed` is observed.
