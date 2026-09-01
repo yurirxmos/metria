@@ -71,6 +71,19 @@ public enum PairingSecret {
         SymmetricKey(data: derive(from: secret, info: "metria-key-v1", byteCount: 32))
     }
 
+    /// Derives the token clients present to the local `/snapshot` endpoint, so a header
+    /// captured on the LAN cannot also unlock the ntfy relay the master secret protects.
+    public static func localToken(from secret: Data) -> String {
+        base64URLEncode(derive(from: secret, info: "metria-local-token-v1", byteCount: 32))
+    }
+
+    private static func base64URLEncode(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
     private static func derive(from secret: Data, info: String, byteCount: Int) -> Data {
         let key = HKDF<SHA256>.deriveKey(
             inputKeyMaterial: SymmetricKey(data: secret),

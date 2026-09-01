@@ -7,17 +7,6 @@ import MetriaCore
 import ServiceManagement
 import SwiftUI
 
-private struct MetriaSnapshot: Encodable {
-    struct Provider: Encodable {
-        let name: String
-        let percent: Double
-        let resetDate: Date?
-    }
-
-    let updatedAt: Date
-    let providers: [Provider]
-}
-
 /// Stores the pairing master secret in the macOS Keychain. The secret never leaves the
 /// Mac in plaintext: the PWA only ever receives it via the QR code or 12-word phrase,
 /// both of which the user controls when and how to share.
@@ -99,7 +88,12 @@ extension Data {
     @Published private(set) var qrImage: NSImage?
     private var secret: Data = Data()
     var currentSecret: Data { secret }
+    /// The legacy token: the master secret itself, still accepted by `/snapshot` so
+    /// deployed PWA installs keep working without a re-pair.
     var currentSnapshotToken: String { secret.base64URLEncodedString }
+    /// The token new clients (the iOS app) send instead: derived from the secret, so a
+    /// header captured on the LAN cannot also unlock the ntfy relay the secret protects.
+    var currentLocalToken: String { PairingSecret.localToken(from: secret) }
 
     init() {
         secret = PairingKeychain.loadOrGenerate()
@@ -111,15 +105,20 @@ extension Data {
         words = PairingSecret.words(from: secret)
     }
 
-    func pairingLink(pwaBaseURL: String, ntfyServer: String) -> String {
-        let encodedServer =
-            ntfyServer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ntfyServer
-        return "\(pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)"
+    /// `localURL`, when the local server has a reachable address, rides along in the same
+    /// QR code the PWA already reads: the PWA ignores unknown fragment parameters, so one
+    /// code now pairs both clients.
+    func pairingLink(pwaBaseURL: String, ntfyServer: String, localURL: String?) -> String {
+        let encodedServer = ntfyServer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ntfyServer
+        var link = "\(pwaBaseURL)/#s=\(secret.base64URLEncodedString)&server=\(encodedServer)"
+        if let localURL, let encodedLocal = localURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            link += "&local=\(encodedLocal)"
+        }
+        return link
     }
 
-    func refreshQRCode(pwaBaseURL: String, ntfyServer: String) {
-        qrImage = Self.renderQRCode(
-            for: pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer))
+    func refreshQRCode(pwaBaseURL: String, ntfyServer: String, localURL: String?) {
+        qrImage = Self.renderQRCode(for: pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localURL))
     }
 
     private static func renderQRCode(for string: String) -> NSImage? {
@@ -149,7 +148,7 @@ extension Data {
             server.scheme == "https", server.host != nil
         else { return }
 
-        let snapshot = MetriaSnapshot(
+        let snapshot = UsageSnapshot(
             updatedAt: Date(),
             providers: providers.compactMap { usage in
                 guard let primary = usage.primary else { return nil }
@@ -158,8 +157,7 @@ extension Data {
                     resetDate: primary.resetDate)
             }
         )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        let encoder = UsageSnapshotCoding.makeEncoder()
         guard let payload = try? encoder.encode(snapshot), payload != lastPayload else { return }
         onSnapshot?(payload)
 
@@ -1616,6 +1614,7 @@ struct SettingsView: View {
     @State private var ntfyServer: String
     let onChangeServer: (String) -> Void
     let localPWAURL: () -> String?
+    let localServerURL: () -> String?
     @State private var localServerPort: String
     let onChangeLocalServerPort: (UInt16) -> Void
     @State private var customPWAURL: String
@@ -1662,6 +1661,7 @@ struct SettingsView: View {
         ntfyServer: String,
         onChangeServer: @escaping (String) -> Void,
         localPWAURL: @escaping () -> String?,
+        localServerURL: @escaping () -> String?,
         localServerPort: UInt16,
         onChangeLocalServerPort: @escaping (UInt16) -> Void,
         customPWAURL: String,
@@ -1704,6 +1704,7 @@ struct SettingsView: View {
         _ntfyServer = State(initialValue: ntfyServer)
         self.onChangeServer = onChangeServer
         self.localPWAURL = localPWAURL
+        self.localServerURL = localServerURL
         _localServerPort = State(initialValue: String(localServerPort))
         self.onChangeLocalServerPort = onChangeLocalServerPort
         _customPWAURL = State(initialValue: customPWAURL)
@@ -2117,7 +2118,9 @@ struct SettingsView: View {
                         guard let pwaBaseURL = localPWAURL() else { return }
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(
-                            pairing.pairingLink(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer),
+                            pairing.pairingLink(
+                                pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer,
+                                localURL: localServerURL()),
                             forType: .string)
                     }
                     Spacer()
@@ -2218,7 +2221,7 @@ extension NSMenu {
         configureStatusItem()
         configurePopover()
         configureSidebar()
-        localPWAServer.setSnapshotToken(pairing.currentSnapshotToken)
+        localPWAServer.setSnapshotTokens([pairing.currentSnapshotToken, pairing.currentLocalToken])
         ntfyPublisher.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             self.localPWAServer.updateSnapshot(snapshot)
@@ -2356,14 +2359,18 @@ extension NSMenu {
         return localPWAServer.baseURL?.absoluteString
     }
 
+    /// The Mac's LAN address, independent of `pwaBaseURL`'s hosted-vs-local fallback, so
+    /// the pairing link can carry it even when a custom HTTPS PWA URL is configured.
+    private var localServerURL: String? { localPWAServer.baseURL?.absoluteString }
+
     private func refreshPairingQRCode() {
         guard let pwaBaseURL else { return }
-        pairing.refreshQRCode(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer)
+        pairing.refreshQRCode(pwaBaseURL: pwaBaseURL, ntfyServer: ntfyServer, localURL: localServerURL)
     }
 
     private func regeneratePairing() {
         pairing.regenerate()
-        localPWAServer.setSnapshotToken(pairing.currentSnapshotToken)
+        localPWAServer.setSnapshotTokens([pairing.currentSnapshotToken, pairing.currentLocalToken])
         refreshPairingQRCode()
         ntfyPublisher.publish(store.providers, secret: pairing.currentSecret)
     }
@@ -3347,6 +3354,7 @@ extension NSMenu {
                     self.store.refresh()
                 },
                 localPWAURL: { [weak self] in self?.pwaBaseURL },
+                localServerURL: { [weak self] in self?.localServerURL },
                 localServerPort: localServerPort,
                 onChangeLocalServerPort: { [weak self] port in
                     guard let self else { return }

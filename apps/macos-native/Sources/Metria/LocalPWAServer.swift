@@ -10,7 +10,7 @@ import Network
     private var attempts = 0
     private(set) var port: UInt16?
     private var snapshot: Data?
-    private var snapshotToken = ""
+    private var validSnapshotTokens: Set<String> = []
     var onURLChange: (() -> Void)?
 
     var baseURL: URL? {
@@ -35,8 +35,11 @@ import Network
         self.snapshot = snapshot
     }
 
-    func setSnapshotToken(_ snapshotToken: String) {
-        self.snapshotToken = snapshotToken
+    /// Accepts the legacy base64url master secret (still sent by deployed PWA installs)
+    /// alongside the newer per-purpose local token (`PairingSecret.localToken`), so a
+    /// header captured on the LAN cannot also unlock the ntfy relay.
+    func setSnapshotTokens(_ tokens: Set<String>) {
+        validSnapshotTokens = tokens.filter { !$0.isEmpty }
     }
 
     private func startListener() {
@@ -46,6 +49,7 @@ import Network
 
         do {
             let listener = try NWListener(using: .tcp, on: port)
+            listener.service = NWListener.Service(name: "Metria", type: "_metria._tcp")
             self.listener = listener
             listener.stateUpdateHandler = { [weak self, weak listener] state in
                 let owner = self
@@ -113,7 +117,7 @@ import Network
                 .dropFirst()
                 .first { $0.lowercased().hasPrefix("x-metria-secret:") }
                 .flatMap { $0.split(separator: ":", maxSplits: 1).last.map { $0.trimmingCharacters(in: .whitespaces) } }
-            guard !self.snapshotToken.isEmpty, snapshotToken == self.snapshotToken, let snapshot else {
+            guard let snapshotToken, !validSnapshotTokens.isEmpty, validSnapshotTokens.contains(snapshotToken), let snapshot else {
                 return Self.response(status: "204 No Content", body: Data())
             }
             return Self.response(status: "200 OK", body: snapshot, contentType: "application/json; charset=utf-8")
