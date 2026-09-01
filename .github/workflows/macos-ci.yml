@@ -1,0 +1,43 @@
+name: macOS CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/macos-ci.yml"
+      - "Assets/**"
+      - "Package.swift"
+      - "Package.resolved"
+      - "apps/macos-native/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify Swift package
+        run: swift build
+
+      - name: Build native app
+        run: |
+          xcodebuild \
+            -project apps/macos-native/Metria.xcodeproj \
+            -scheme Metria \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath .build/xcode-ci \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Validate app bundle
+        run: |
+          app_path=".build/xcode-ci/Build/Products/Release/Metria.app"
+          test -f "$app_path/Contents/Resources/Assets.car"
+          test -d "$app_path/Contents/Frameworks/Sparkle.framework"
+          test -f "$app_path/Contents/Resources/app.css"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app_path/Contents/Info.plist")" = "13.0"
