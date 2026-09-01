@@ -2,7 +2,7 @@
   "name": "metria-pwa",
   "private": true,
   "scripts": {
-    "build": "cp ../../Assets/claude-logo.png ../../Assets/codex-logo.png ../../Assets/metria-logo.png ../../Assets/metria-mascot.png ../../Assets/opencode-logo.png public/ && tailwindcss -i ./public/tailwind.input.css -o ./public/app.css --minify",
+    "build": "cp ../../Assets/claude-logo.png ../../Assets/codex-logo.png ../../Assets/cursor-logo.png ../../Assets/metria-logo.png ../../Assets/metria-mascot.png ../../Assets/opencode-logo.png public/ && tailwindcss -i ./public/tailwind.input.css -o ./public/app.css --minify",
 
     "deploy": "npm run build && wrangler deploy",
     "preview": "wrangler dev"

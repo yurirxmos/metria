@@ -1,201 +1,95 @@
 import Foundation
 import MetriaCore
 
-/// Fetches Cursor usage from the OAuth session the Cursor editor stores in its local
-/// `state.vscdb` (a SQLite database shared with every VS Code-derived app). Cursor has no
-/// public usage API, so this calls the same dashboard endpoints the web dashboard itself
-/// uses, authenticated with the `WorkosCursorSessionToken` cookie the editor already holds.
+/// Fetches Cursor usage using the JWT Cursor stores in its VS Code-derived
+/// global storage database, calling the same Connect-RPC endpoint the
+/// Cursor dashboard uses. See plans/002-cursor-provider-macos.md for the
+/// research this is based on.
 struct CursorProvider: UsageProvider {
     let kind = ProviderKind.cursor
-    var isAvailable: Bool { FileManager.default.fileExists(atPath: stateDBURL.path) }
-    let setupHint = "Open Cursor and sign in to make usage available."
-    let usageWindowTitles = ["All models", "Cursor models"]
+    let setupHint = "Sign in to Cursor to make usage available."
+    let usageWindowTitles = ["This cycle"]
 
-    private var stateDBURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb")
+    private var stateStore: CursorStateStore {
+        CursorStateStore(databaseURL: FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb"))
+    }
+
+    var isAvailable: Bool {
+        FileManager.default.fileExists(atPath: stateStore.databaseURL.path) && stateStore.readItem("cursorAuth/accessToken") != nil
     }
 
     func fetch() async -> ProviderFetchResult {
-        guard let session = readLocalSession(), let sub = decodeJWTSub(session.accessToken) else {
-            return .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: "No Cursor session was found. Open Cursor and sign in to create local usage data."))
-        }
-        let cookie = encodeCookieValue("\(sub)::\(session.accessToken)")
         do {
-            let usage = try await fetchPeriodUsage(cookie: cookie)
-            let accountLabel = try? await fetchAccountEmail(cookie: cookie)
-            return .loaded(ProviderUsage(
-                kind: kind,
-                accountLabel: accountLabel,
-                planLabel: session.membershipType.map(displayPlanName),
-                windows: [
-                    UsageWindow(title: "All models", percent: usage.otherPercent, resetDate: usage.resetDate),
-                    UsageWindow(title: "Cursor models", percent: usage.cursorPercent, resetDate: usage.resetDate)
-                ], updatedAt: Date(), error: nil))
+            guard let token = stateStore.readItem("cursorAuth/accessToken") else { throw ProviderError.unavailable }
+            guard !Self.isExpired(token) else { throw ProviderError.http(401) }
+            let data = try await requestUsage(token: token)
+            let usage = try JSONDecoder().decode(CursorUsageResponse.self, from: data)
+            guard let percent = usage.planUsage?.totalPercentUsed else { throw ProviderError.unavailable }
+            return .loaded(ProviderUsage(kind: kind, windows: [
+                UsageWindow(title: "This cycle", percent: percent, resetDate: usage.billingCycleEndDate)
+            ], updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError
-            return .failed(kind, error.localizedDescription, retryAfter: providerError?.retryAfter)
+            let message: String
+            switch providerError {
+            case .http(401), .http(403): message = "Sign in to Cursor again to refresh usage."
+            default: message = error.localizedDescription
+            }
+            return .failed(kind, message, retryAfter: providerError?.retryAfter)
         }
     }
 
-    // MARK: - Local session
-
-    private struct LocalSession {
-        let accessToken: String
-        let membershipType: String?
-    }
-
-    /// Shells out to the system `sqlite3` CLI (bundled with macOS) instead of linking a
-    /// SQLite driver, mirroring how `KeychainReader` shells out to `/usr/bin/security`.
-    /// Reads the access token and the (undocumented) `stripeMembershipType` key the editor
-    /// caches locally, so the plan badge needs no extra network round trip.
-    private func readLocalSession() -> LocalSession? {
-        guard FileManager.default.fileExists(atPath: stateDBURL.path) else { return nil }
-        let process = Process(); let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = [stateDBURL.path, "SELECT key, value FROM ItemTable WHERE key IN ('cursorAuth/accessToken','cursorAuth/stripeMembershipType');"]
-        process.standardOutput = output; process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return nil }
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        guard let text = String(data: data, encoding: .utf8) else { return nil }
-
-        var accessToken: String?
-        var membershipType: String?
-        for line in text.split(separator: "\n") {
-            guard let separator = line.firstIndex(of: "|") else { continue }
-            let key = line[line.startIndex..<separator]
-            let value = String(line[line.index(after: separator)...])
-            if key == "cursorAuth/accessToken" { accessToken = value }
-            else if key == "cursorAuth/stripeMembershipType" { membershipType = value }
-        }
-        guard let accessToken, !accessToken.isEmpty else { return nil }
-        return LocalSession(accessToken: accessToken, membershipType: membershipType?.isEmpty == false ? membershipType : nil)
-    }
-
-    private func displayPlanName(_ raw: String) -> String {
-        switch raw.lowercased().replacingOccurrences(of: "_", with: "").replacingOccurrences(of: "-", with: "") {
-        case "free": "Free"
-        case "pro": "Pro"
-        case "proplus": "Pro+"
-        case "ultra": "Ultra"
-        case "team": "Team"
-        case "enterprise": "Enterprise"
-        default: raw.capitalized
-        }
-    }
-
-    private func decodeJWTSub(_ token: String) -> String? {
-        let parts = token.split(separator: ".")
-        guard parts.count >= 2 else { return nil }
-        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
-        guard let data = Data(base64Encoded: payload),
-              let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return claims["sub"] as? String
-    }
-
-    private static let cookieUnreservedCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()")
-
-    /// Replicates JavaScript's `encodeURIComponent`, matching how the Cursor web dashboard
-    /// itself encodes the `userId::accessToken` pair into the session cookie's value.
-    private func encodeCookieValue(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: Self.cookieUnreservedCharacters) ?? value
-    }
-
-    // MARK: - Dashboard API
-
-    private func fetchPeriodUsage(cookie: String) async throws -> (cursorPercent: Double, otherPercent: Double, resetDate: Date?) {
-        if let result = try? await fetchCurrentPeriodUsage(cookie: cookie) { return result }
-        return try await fetchUsageSummary(cookie: cookie)
-    }
-
-    private func fetchCurrentPeriodUsage(cookie: String) async throws -> (Double, Double, Date?) {
-        var request = URLRequest(url: URL(string: "https://cursor.com/api/dashboard/get-current-period-usage")!)
-        request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: [String: Any]())
-        applyHeaders(to: &request, cookie: cookie, isPost: true)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-        guard status == 200 else { throw ProviderError.http(status) }
-        let value = try JSONDecoder().decode(PeriodUsageResponse.self, from: data)
-        guard let plan = value.planUsage, plan.autoPercentUsed != nil || plan.apiPercentUsed != nil else {
-            throw ProviderError.unavailable
-        }
-        return (plan.autoPercentUsed ?? 0, plan.apiPercentUsed ?? 0, parseResetDate(value.billingCycleEnd))
-    }
-
-    private func fetchUsageSummary(cookie: String) async throws -> (Double, Double, Date?) {
-        var request = URLRequest(url: URL(string: "https://cursor.com/api/usage-summary")!)
-        applyHeaders(to: &request, cookie: cookie, isPost: false)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-        guard status == 200 else { throw ProviderError.http(status) }
-        let value = try JSONDecoder().decode(UsageSummaryResponse.self, from: data)
-        let plan = value.individualUsage?.plan
-        return (plan?.autoPercentUsed ?? 0, plan?.apiPercentUsed ?? 0, parseResetDate(value.billingCycleEnd))
-    }
-
-    private func fetchAccountEmail(cookie: String) async throws -> String? {
-        var request = URLRequest(url: URL(string: "https://cursor.com/api/auth/me")!)
-        applyHeaders(to: &request, cookie: cookie, isPost: false)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return try? JSONDecoder().decode(AuthMeResponse.self, from: data).email
-    }
-
-    private func applyHeaders(to request: inout URLRequest, cookie: String, isPost: Bool) {
-        // Cookie storage would otherwise silently override this manually-set header.
-        request.httpShouldHandleCookies = false
-        request.setValue("WorkosCursorSessionToken=\(cookie)", forHTTPHeaderField: "Cookie")
-        request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if isPost {
+    private func requestUsage(token: String) async throws -> Data {
+        for attempt in 0..<3 {
+            var request = URLRequest(url: URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage")!)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
-            request.setValue("https://cursor.com/dashboard/usage", forHTTPHeaderField: "Referer")
+            request.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
+            request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
+            request.httpBody = Data("{}".utf8)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let httpResponse = response as? HTTPURLResponse
+            let status = httpResponse?.statusCode ?? -1
+            if status == 429 {
+                let retryAfter = httpResponse?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? pow(2, Double(attempt + 1))
+                guard attempt < 2 else { throw ProviderError.rateLimited(retryAfter: retryAfter) }
+                try await Task.sleep(for: .seconds(min(retryAfter, 30)))
+                continue
+            }
+            guard status == 200 else { throw ProviderError.http(status) }
+            return data
         }
+        throw ProviderError.unavailable
     }
 
-    private func parseResetDate(_ value: String?) -> Date? {
-        guard let value else { return nil }
-        if let milliseconds = Double(value) { return Date(timeIntervalSince1970: milliseconds / 1000) }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: value) ?? {
-            formatter.formatOptions = [.withInternetDateTime]
-            return formatter.date(from: value)
-        }()
+    /// Decodes the JWT's `exp` claim without verifying its signature — Metria
+    /// only wants to skip a pointless network call for a token it already
+    /// knows has expired.
+    private static func isExpired(_ token: String) -> Bool {
+        let segments = token.split(separator: ".")
+        guard segments.count >= 2 else { return false }
+        var base64 = String(segments[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while base64.count % 4 != 0 { base64 += "=" }
+        guard let payloadData = Data(base64Encoded: base64),
+              let payload = try? JSONDecoder().decode(JWTPayload.self, from: payloadData),
+              let exp = payload.exp else { return false }
+        return Date(timeIntervalSince1970: exp) < Date()
     }
 
-    private struct PeriodUsageResponse: Decodable {
-        let billingCycleStart: String?
-        let billingCycleEnd: String?
+    private struct JWTPayload: Decodable { let exp: Double? }
+
+    private struct CursorUsageResponse: Decodable {
         let planUsage: PlanUsage?
+        let billingCycleEnd: String?
+
+        var billingCycleEndDate: Date? {
+            billingCycleEnd.flatMap(Double.init).map { Date(timeIntervalSince1970: $0 / 1000) }
+        }
 
         struct PlanUsage: Decodable {
-            let autoPercentUsed: Double?
-            let apiPercentUsed: Double?
+            let totalPercentUsed: Double?
         }
-    }
-
-    private struct UsageSummaryResponse: Decodable {
-        let billingCycleStart: String?
-        let billingCycleEnd: String?
-        let individualUsage: IndividualUsage?
-
-        struct IndividualUsage: Decodable {
-            let plan: Plan?
-
-            struct Plan: Decodable {
-                let autoPercentUsed: Double?
-                let apiPercentUsed: Double?
-            }
-        }
-    }
-
-    private struct AuthMeResponse: Decodable {
-        let email: String?
     }
 }

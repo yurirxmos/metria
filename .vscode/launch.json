@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:metria}",
+      "name": "Debug Metria",
+      "target": "Metria",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug Metria"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:metria}",
+      "name": "Release Metria",
+      "target": "Metria",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release Metria"
+    }
+  ]
+}

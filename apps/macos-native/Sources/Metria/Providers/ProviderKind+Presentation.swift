@@ -6,7 +6,7 @@ import MetriaCore
 /// and the sidebar gauge's gradient. Add a case here alongside every new provider file.
 extension ProviderKind {
     var symbol: String {
-        switch self { case .claude: "sparkles"; case .codex: "hexagon"; case .openCodeGo: "globe.americas.fill"; case .cursor: "cursorarrow" }
+        switch self { case .claude: "sparkles"; case .codex: "hexagon"; case .openCodeGo: "globe.americas.fill"; case .cursor: "cursorarrow.rays" }
     }
 
     var reconnectCommand: String {
@@ -36,7 +36,7 @@ extension ProviderKind {
         case .openCodeGo:
             LinearGradient(colors: [.white, .white], startPoint: .leading, endPoint: .trailing)
         case .cursor:
-            LinearGradient(colors: [.indigo, .indigo], startPoint: .leading, endPoint: .trailing)
+            LinearGradient(colors: [.gray, .white], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
     }
 }

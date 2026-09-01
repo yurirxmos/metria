@@ -57,7 +57,7 @@ Providers are enabled automatically only when their local credentials or usage f
 - **Claude** — OAuth token read from the macOS Keychain, usage fetched from the Anthropic usage endpoint.
 - **Codex / OpenCode** — credentials read from `~/.local/share/opencode/auth.json` and local session files.
 - **OpenCode Go** — API key read from the same `auth.json`, usage fetched from the OpenCode Go endpoint.
-- **Cursor** — OAuth session read from the editor's local `state.vscdb`, usage fetched from the Cursor dashboard endpoints (`All models` / `Cursor models`).
+- **Cursor** — JWT read from Cursor's `state.vscdb` (VS Code global storage SQLite database), usage fetched from Cursor's dashboard endpoint. This endpoint is not published by Cursor and can change without notice, outside this project's control.
 
 The native app reads credentials at runtime from the Keychain and local configuration files. See the [native provider sources](apps/macos-native/Sources/Metria/Providers/).
 
