@@ -25,7 +25,7 @@ struct CursorProvider: UsageProvider {
             guard !Self.isExpired(token) else { throw ProviderError.http(401) }
             let data = try await requestUsage(token: token)
             let usage = try JSONDecoder().decode(CursorUsageResponse.self, from: data)
-            guard let percent = usage.planUsage?.totalPercentUsed else { throw ProviderError.unavailable }
+            guard let percent = usage.percentUsed else { throw ProviderError.unavailable }
             return .loaded(ProviderUsage(kind: kind, windows: [
                 UsageWindow(title: "This cycle", percent: percent, resetDate: usage.billingCycleEndDate)
             ], updatedAt: Date(), error: nil))
@@ -48,7 +48,7 @@ struct CursorProvider: UsageProvider {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
             request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
-            request.httpBody = Data("{}".utf8)
+            request.httpBody = Data(Self.usageRequestBody.utf8)
             let (data, response) = try await URLSession.shared.data(for: request)
             let httpResponse = response as? HTTPURLResponse
             let status = httpResponse?.statusCode ?? -1
@@ -80,16 +80,50 @@ struct CursorProvider: UsageProvider {
 
     private struct JWTPayload: Decodable { let exp: Double? }
 
+    /// Without `includePooledUsage`, a team or enterprise account gets a stub
+    /// answer back — no `planUsage`, no `spendLimitUsage`, and a billing cycle
+    /// whose start and end are the same instant — which reads as "this account
+    /// has no usage". The flag is what makes the server fill in the seat's real
+    /// spend and limit.
+    private static let usageRequestBody = #"{"includePooledUsage":true}"#
+
     private struct CursorUsageResponse: Decodable {
         let planUsage: PlanUsage?
+        let spendLimitUsage: SpendLimitUsage?
         let billingCycleEnd: String?
 
         var billingCycleEndDate: Date? {
             billingCycleEnd.flatMap(Double.init).map { Date(timeIntervalSince1970: $0 / 1000) }
         }
 
+        /// Follows the order Cursor's own usage bar uses: a plan with a real
+        /// included limit is measured against that limit, and an account whose
+        /// quota lives in a seat spend limit — team and enterprise seats, which
+        /// report a `planUsage` of all zeroes — is measured against the seat's
+        /// individual, then overall, limit.
+        var percentUsed: Double? {
+            ratio(planUsage?.includedSpend, planUsage?.limit)
+                ?? ratio(spendLimitUsage?.individualUsed, spendLimitUsage?.individualLimit)
+                ?? ratio(spendLimitUsage?.overallUsed, spendLimitUsage?.overallLimit)
+                ?? planUsage?.totalPercentUsed
+        }
+
+        private func ratio(_ used: Double?, _ limit: Double?) -> Double? {
+            guard let used, let limit, limit > 0 else { return nil }
+            return min(used / limit * 100, 100)
+        }
+
         struct PlanUsage: Decodable {
+            let includedSpend: Double?
+            let limit: Double?
             let totalPercentUsed: Double?
+        }
+
+        struct SpendLimitUsage: Decodable {
+            let individualUsed: Double?
+            let individualLimit: Double?
+            let overallUsed: Double?
+            let overallLimit: Double?
         }
     }
 }
