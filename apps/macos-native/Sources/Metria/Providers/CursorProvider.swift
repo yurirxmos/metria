@@ -25,9 +25,10 @@ struct CursorProvider: UsageProvider {
             guard !Self.isExpired(token) else { throw ProviderError.http(401) }
             let data = try await requestUsage(token: token)
             let usage = try JSONDecoder().decode(CursorUsageResponse.self, from: data)
-            guard let percent = usage.percentUsed else { throw ProviderError.unavailable }
+            guard let measure = usage.measure else { throw ProviderError.unavailable }
             return .loaded(ProviderUsage(kind: kind, windows: [
-                UsageWindow(title: "This cycle", percent: percent, resetDate: usage.billingCycleEndDate)
+                UsageWindow(title: "This cycle", percent: measure.percent, resetDate: usage.billingCycleEndDate,
+                            usedCents: measure.usedCents, limitCents: measure.limitCents)
             ], updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError
@@ -96,21 +97,30 @@ struct CursorProvider: UsageProvider {
             billingCycleEnd.flatMap(Double.init).map { Date(timeIntervalSince1970: $0 / 1000) }
         }
 
+        struct Measure {
+            let percent: Double
+            var usedCents: Double?
+            var limitCents: Double?
+        }
+
         /// Follows the order Cursor's own usage bar uses: a plan with a real
         /// included limit is measured against that limit, and an account whose
         /// quota lives in a seat spend limit — team and enterprise seats, which
         /// report a `planUsage` of all zeroes — is measured against the seat's
-        /// individual, then overall, limit.
-        var percentUsed: Double? {
-            ratio(planUsage?.includedSpend, planUsage?.limit)
-                ?? ratio(spendLimitUsage?.individualUsed, spendLimitUsage?.individualLimit)
-                ?? ratio(spendLimitUsage?.overallUsed, spendLimitUsage?.overallLimit)
-                ?? planUsage?.totalPercentUsed
+        /// individual, then overall, limit. Every amount Cursor sends is in cents,
+        /// and the pair that produced the percent travels with it so a card can
+        /// print "$130 / $250" for the same bar. The last fallback is a bare
+        /// percentage, which carries no amounts to show.
+        var measure: Measure? {
+            spent(planUsage?.includedSpend, planUsage?.limit)
+                ?? spent(spendLimitUsage?.individualUsed, spendLimitUsage?.individualLimit)
+                ?? spent(spendLimitUsage?.overallUsed, spendLimitUsage?.overallLimit)
+                ?? planUsage?.totalPercentUsed.map { Measure(percent: $0) }
         }
 
-        private func ratio(_ used: Double?, _ limit: Double?) -> Double? {
+        private func spent(_ used: Double?, _ limit: Double?) -> Measure? {
             guard let used, let limit, limit > 0 else { return nil }
-            return min(used / limit * 100, 100)
+            return Measure(percent: min(used / limit * 100, 100), usedCents: used, limitCents: limit)
         }
 
         struct PlanUsage: Decodable {

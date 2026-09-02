@@ -48,16 +48,27 @@ function renderSnapshot(snapshot) {
   providerGrid.innerHTML = providers.map((provider) => {
     const percent = Math.max(0, Math.min(100, Number(provider.percent) || 0));
     const logo = providerLogo(provider.name);
+    const spend = spendText(provider);
     return `<article class="rounded-2xl border border-white/10 bg-black p-5">
       <div class="flex items-center justify-between gap-4"><div class="flex min-w-0 items-center gap-3">${logo ? `<img src="${logo}" alt="" class="h-6 w-6 shrink-0 object-contain">` : ""}<span class="truncate text-base font-medium">${escapeHtml(provider.name)}</span></div><strong class="shrink-0 text-[28px] font-medium tracking-[-0.05em]" style="color: ${usageColor(percent)}">${Math.round(percent)}%</strong></div>
       <div class="mt-5 h-[5px] overflow-hidden rounded-full bg-[#2c2c2e]"><div class="h-full rounded-full" style="width: ${percent}%; background-color: ${usageColor(percent)}"></div></div>
-      <p class="mb-0 mt-3 text-xs text-[#8e8e93]">${provider.resetDate ? `Resets ${formatDate(provider.resetDate)}` : "No reset date"}</p>
+      <p class="mb-0 mt-3 flex items-baseline justify-between gap-3 text-xs text-[#8e8e93]"><span>${provider.resetDate ? `Resets ${formatDate(provider.resetDate)}` : "No reset date"}</span>${spend ? `<span class="shrink-0 font-mono">${escapeHtml(spend)}</span>` : ""}</p>
     </article>`;
   }).join("");
   emptyState.hidden = providers.length > 0;
   if (snapshot?.updatedAt) {
     lastUpdated.textContent = `Updated ${formatDate(snapshot.updatedAt)}`;
   }
+}
+
+/** Cursor is the only provider that reports what a cycle costs, and it reports cents.
+ * Whole dollars drop the decimals, matching the desktop apps' "$130 / $250". */
+function spendText(provider) {
+  const used = Number(provider.usedCents);
+  const limit = Number(provider.limitCents);
+  if (!Number.isFinite(used) || !Number.isFinite(limit)) return "";
+  const amount = (cents) => `$${Number.isInteger(cents / 100) ? (cents / 100).toFixed(0) : (cents / 100).toFixed(2)}`;
+  return `${amount(used)} / ${amount(limit)}`;
 }
 
 function usageColor(percent) {

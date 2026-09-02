@@ -154,7 +154,8 @@ extension Data {
                 guard let primary = usage.primary else { return nil }
                 return .init(
                     name: usage.kind.rawValue, percent: primary.percent,
-                    resetDate: primary.resetDate)
+                    resetDate: primary.resetDate,
+                    usedCents: primary.usedCents, limitCents: primary.limitCents)
             }
         )
         let encoder = UsageSnapshotCoding.makeEncoder()
@@ -270,7 +271,7 @@ struct UsageCard: View {
     var backgroundOpacity: Double = 1
     var alertSettings: MenuBarAlertSettings = .default
     @AppStorage("showAccountEmails") private var showAccountEmails = true
-
+    @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
     private var isCompact: Bool { width < 390 }
     private var visibleWindows: [UsageWindow] {
         usage.windows.filter { !hiddenWindowTitles.contains($0.title) }
@@ -336,8 +337,16 @@ struct UsageCard: View {
                             ).frame(
                                 width: max(0, barWidth * window.percent / 100))
                         }.frame(height: (isCompact ? 5 : 7) * scale)
-                        Text("\(Int(window.percent.rounded()))% Used").font(
-                            .system(size: (isCompact ? 11 : 15) * scale))
+                        let parts = window.spendParts(spendDisplay)
+                        HStack(spacing: (isCompact ? 6 : 10) * scale) {
+                            if parts.showsPercent {
+                                Text("\(Int(window.percent.rounded()))% Used")
+                            }
+                            if let spend = parts.spend {
+                                Spacer(minLength: 0)
+                                Text(spend).monospacedDigit()
+                            }
+                        }.font(.system(size: (isCompact ? 11 : 15) * scale))
                     }
                 }
             }
@@ -383,6 +392,7 @@ struct DashboardUsageCard: View {
     var hiddenWindowTitles: Set<String> = []
     var alertSettings: MenuBarAlertSettings = .default
     @AppStorage("showAccountEmails") private var showAccountEmails = true
+    @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
 
     private var visibleWindows: [UsageWindow] {
         usage.windows.filter { !hiddenWindowTitles.contains($0.title) }
@@ -410,20 +420,33 @@ struct DashboardUsageCard: View {
                 } else {
                     ForEach(visibleWindows) { window in
                         let color = alertSettings.usageColor(for: window.percent, fallback: .green)
+                        let parts = window.spendParts(spendDisplay)
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text(window.title)
                                 Spacer()
-                                Text("\(Int(window.percent.rounded()))%")
-                                    .foregroundStyle(color)
-                                    .monospacedDigit()
+                                if parts.showsPercent {
+                                    Text("\(Int(window.percent.rounded()))%")
+                                        .foregroundStyle(color)
+                                        .monospacedDigit()
+                                } else if let spend = parts.spend {
+                                    Text(spend)
+                                        .foregroundStyle(color)
+                                        .monospacedDigit()
+                                }
                             }
                             .font(.subheadline)
                             ProgressView(value: min(max(window.percent, 0), 100), total: 100)
                                 .tint(color)
-                            Text(window.resetText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            HStack {
+                                Text(window.resetText)
+                                Spacer()
+                                if parts.showsPercent, let spend = parts.spend {
+                                    Text(spend).monospacedDigit()
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -1581,6 +1604,7 @@ struct SettingsView: View {
     @ObservedObject var pairing: PairingManager
     @AppStorage("showAccountEmails") private var showAccountEmails = true
     @AppStorage("whiteProviderLogos") private var whiteProviderLogos = false
+    @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
     @State private var showsNotch: Bool
     let onToggleNotch: (Bool) -> Void
     @State private var showsMenuBar: Bool
@@ -1805,6 +1829,13 @@ struct SettingsView: View {
                     )
                 )
                 .disabled(showsMenuBar && !showsNotch)
+                Picker("Show usage as", selection: $spendDisplay) {
+                    ForEach(SpendDisplay.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                Text("Cursor is the only provider that reports what a cycle costs; the others always show a percentage.")
+                    .foregroundStyle(.secondary)
             }
 
             Section("Notch") {

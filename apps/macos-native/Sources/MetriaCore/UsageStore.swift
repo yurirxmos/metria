@@ -5,13 +5,79 @@ public struct UsageWindow: Equatable, Identifiable {
     public let title: String
     public let percent: Double
     public let resetDate: Date?
+    /// What the window costs, in cents, when the provider measures money rather than a
+    /// bare percentage (Cursor). Present as a pair or not at all.
+    public let usedCents: Double?
+    public let limitCents: Double?
 
     public var id: String { title }
 
-    public init(title: String, percent: Double, resetDate: Date?) {
+    public init(title: String, percent: Double, resetDate: Date?, usedCents: Double? = nil, limitCents: Double? = nil) {
         self.title = title
         self.percent = percent
         self.resetDate = resetDate
+        self.usedCents = usedCents
+        self.limitCents = limitCents
+    }
+
+    public func spendParts(_ display: SpendDisplay) -> SpendParts {
+        SpendFormat.parts(usedCents: usedCents, limitCents: limitCents, display: display)
+    }
+}
+
+/// How a window that carries spend amounts prints its magnitude. Persisted by raw value
+/// under the `spendDisplay` defaults key on macOS, and in the shared App Group on iOS.
+public enum SpendDisplay: String, CaseIterable, Identifiable {
+    case percent
+    case dollars
+    case both
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .percent: "Percentage"
+        case .dollars: "Dollars"
+        case .both: "Both"
+        }
+    }
+}
+
+/// Which halves of a readout to draw: the percentage, the money, or both.
+public struct SpendParts: Equatable {
+    public let showsPercent: Bool
+    public let spend: String?
+}
+
+public enum SpendFormat {
+    public static let defaultsKey = "spendDisplay"
+
+    /// The persisted choice, defaulting to the same `.both` every `@AppStorage` binding
+    /// on this key declares. iOS passes the App Group's suite so the widget extension and
+    /// the app read one setting.
+    public static func display(in defaults: UserDefaults) -> SpendDisplay {
+        defaults.string(forKey: defaultsKey).flatMap(SpendDisplay.init(rawValue:)) ?? .both
+    }
+
+    /// Cursor reports cents. Whole dollars drop the decimals so the common case reads as
+    /// money ("$130") instead of accounting ("$130.00").
+    public static func amount(cents: Double) -> String {
+        let dollars = cents / 100
+        return String(format: dollars == dollars.rounded() ? "$%.0f" : "$%.2f", dollars)
+    }
+
+    /// The money half of a readout — "$130 / $250" — or nil for a provider that only ever
+    /// reports a percentage.
+    public static func text(usedCents: Double?, limitCents: Double?) -> String? {
+        guard let usedCents, let limitCents else { return nil }
+        return "\(amount(cents: usedCents)) / \(amount(cents: limitCents))"
+    }
+
+    /// A window without amounts always keeps its percentage, so choosing dollars never
+    /// blanks out Claude, Codex, or OpenCode Go.
+    public static func parts(usedCents: Double?, limitCents: Double?, display: SpendDisplay) -> SpendParts {
+        guard let spend = text(usedCents: usedCents, limitCents: limitCents) else { return SpendParts(showsPercent: true, spend: nil) }
+        return SpendParts(showsPercent: display != .dollars, spend: display == .percent ? nil : spend)
     }
 }
 
