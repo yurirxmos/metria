@@ -123,7 +123,7 @@ public final class UsageStore: ObservableObject {
             .map { Set($0.compactMap(ProviderKind.init(rawValue:))) } ?? Self.legacyProviderKinds
         let newlyAvailableKinds = availableKinds.subtracting(knownKinds)
         enabledProviderKinds = hasSavedKinds ? Set(savedKinds).union(newlyAvailableKinds) : availableKinds
-        defaults.set(ProviderKind.allCases.map(\.rawValue), forKey: knownProvidersKey)
+        defaults.set(knownKinds.union(availableKinds).map(\.rawValue), forKey: knownProvidersKey)
         if hasSavedKinds, !newlyAvailableKinds.isEmpty {
             defaults.set(enabledProviderKinds.map(\.rawValue), forKey: enabledProvidersKey)
         }
