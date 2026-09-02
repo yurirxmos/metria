@@ -37,16 +37,26 @@ final class ProviderActivityMonitor: ObservableObject {
         return recentSessionProviders(for: Set(candidateKinds))
     }
 
+    // Cursor is matched on its bundle path rather than on "cursor" alone: macOS ships a
+    // `CursorUIViewService` text-input helper that runs whether or not Cursor is installed.
     nonisolated private static let processNamesByProvider: [ProviderKind: Set<String>] = [
         .claude: ["claude"],
         .codex: ["codex"],
-        .openCodeGo: ["opencode"]
+        .openCodeGo: ["opencode"],
+        .cursor: ["cursor.app"]
     ]
 
+    // Cursor has no per-session files: its agent conversations live in the same
+    // `globalStorage` SQLite database `CursorProvider` reads credentials from. Scanning the
+    // directory rather than the database picks up `state.vscdb-wal`, which is where writes
+    // land between checkpoints — the main file's mtime alone would lag well past the cutoff.
+    // The directory sees no writes at all while Cursor merely sits open, so a recent mtime
+    // means real activity and not just a running app.
     nonisolated private static let sessionDirectoriesByProvider: [ProviderKind: [String]] = [
         .claude: [".claude/projects"],
         .codex: [".codex/sessions"],
-        .openCodeGo: [".local/share/opencode/storage"]
+        .openCodeGo: [".local/share/opencode/storage"],
+        .cursor: ["Library/Application Support/Cursor/User/globalStorage"]
     ]
 
     /// Reads every process's full command line directly via `sysctl`, avoiding the cost
