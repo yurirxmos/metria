@@ -1,6 +1,6 @@
 # DMG installer window — design spec
 
-Date: 2026-09-04. Branch: `chore/dmg-background`. Status: approved by contributor.
+Date: 2026-09-04. Branch: `chore/dmg-background`. Status: approved by contributor (mockup v3 via visual companion).
 
 ## Goal
 
@@ -28,7 +28,12 @@ dependencies or risking the release pipeline.
 - Top center: mascot (`Assets/metria-mascot.png`, ~120pt), title "Metria"
   semibold, tagline "monitor your usage without leaving your flow" secondary.
 - Bottom row: `Metria.app` icon left (~160,220), arrow baked into the
-  background center, `Applications` symlink right (~500,220). Icons at 128px.
+  background center, `Applications` symlink right (~500,220). Both icons
+  render at the SAME visual size (96px) — explicit contributor requirement.
+- Details (all baked into the PNG): radial blue glow behind the mascot, a
+  "WORKS WITH" strip with the five provider mini-logos (existing Assets),
+  a subtle divider, and numbered microcopy under each target ("1 Drag the
+  app" / "2 Drop it here").
 
 ## Layout script behavior
 
