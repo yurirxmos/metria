@@ -15,7 +15,7 @@ undocumented vendor endpoint sight unseen.
 |---|---|---|---|---|---|
 | 001 | Add a maintainable Electron companion without replacing native macOS | P1 | L | — | Superseded by the repository split |
 | 002 | Add a Cursor usage provider to the native macOS app | P2 | M | — | DONE |
-| 003 | Add an Antigravity usage provider to the native macOS app | P2 | M | — | Planned, Phase 0 gate open |
+| 003 | Add an Antigravity usage provider to the native macOS app | P2 | M | — | Planned, Phase 0 closed |
 
 ## Plans that moved with their app
 

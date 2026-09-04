@@ -24,40 +24,50 @@
 ## Decision
 
 Add **Antigravity** as a fifth `ProviderKind` in the native macOS app, following
-the existing provider contract exactly: discover a local credential, call the
-vendor's usage endpoint, and map the answer onto `UsageWindow` values.
-Antigravity differs from the four current providers in one way only, and that
-difference drives most of this plan: its quota is per-model, not per-window.
-The `fetchAvailableModels` endpoint answers with one `remainingFraction` plus
-one `resetTime` per model, so Metria must derive its four windows by grouping —
-Gemini models vs. other models, crossed with short-horizon vs. long-horizon
-resets:
+the existing provider contract exactly: discover a local capability, obtain the
+vendor's usage answer, and map it onto `UsageWindow` values. Antigravity
+differs from the four current providers in one way only, and that difference
+drives most of this plan: Metria cannot touch the credential. The fresh
+Antigravity token lives Keychain-only inside the `agy` CLI's own entry, and
+this project's contributor constraint is **zero Keychain authorization prompts
+in the shipped app** — the current app never prompts, and Antigravity support
+must not start. So instead of reading a credential and calling an endpoint,
+the provider shells out to the vendor's own CLI and parses its answer:
+
+```
+agy -p "/usage" </dev/null
+```
+
+which prints exactly the four windows Metria shows, as tab-separated lines
+(group, window, remaining percent, ISO8601 reset):
+
+```
+Gemini Models           Weekly Limit Remaining      98%  2026-09-10T18:19:58Z
+Gemini Models           Five Hour Limit Remaining   100% 2026-09-04T07:04:27Z
+Claude and GPT models   Weekly Limit Remaining      100% 2026-09-11T02:04:27Z
+Claude and GPT models   Five Hour Limit Remaining   100% 2026-09-04T07:04:27Z
+```
+
+The values are REMAINING fractions, so Metria maps
+`percent = 100 - remaining`. Group labels map onto Metria's four windows as
+follows:
 
 | Window | Rule |
 |---|---|
-| 5-hour Gemini | min `remainingFraction` across `gemini-*` models with a short-horizon reset |
-| Weekly Gemini | min across `gemini-*` models with a long-horizon reset |
-| 5-hour other models | min across non-Gemini models (Claude, GPT-OSS, …) with a short-horizon reset |
-| Weekly other models | min across non-Gemini models with a long-horizon reset |
+| 5-hour Gemini | `Gemini Models` × `Five Hour Limit Remaining` line |
+| Weekly Gemini | `Gemini Models` × `Weekly Limit Remaining` line |
+| 5-hour other models | `Claude and GPT models` × `Five Hour Limit Remaining` line |
+| Weekly other models | `Claude and GPT models` × `Weekly Limit Remaining` line |
 
-`percent = (1 - remainingFraction) * 100`. A model belongs to the short-horizon
-group when its `resetTime` is within ~24 hours of now, and to the long-horizon
-group otherwise. This horizon split is an assumption Phase 0 must confirm
-against live data; the fallback is two windows by family only (see Phase 2).
-
-Credentials live in plain JSON at `~/.gemini/oauth_creds.json`
-(`access_token`, `refresh_token`, `expiry_date`) — the same shape the Gemini CLI
-uses. No new storage reader is needed: `Data(contentsOf:)` plus `JSONDecoder`
-is enough, exactly like `OpenCodeGoProvider` reads its auth file. Token refresh
-is a standard Google OAuth2 refresh grant, mirroring `ClaudeProvider`'s refresh
-flow; the refreshed token lives in memory only and is never written back to
-Antigravity's files.
-
-The project ID that `fetchAvailableModels` requires comes from
-`POST .../v1internal:loadCodeAssist`, whose response carries
-`cloudaicompanionProject` — the same discovery call third-party tools use
-before every quota fetch. Both facts are corroborated by shipping third-party
-tools; see "Evidence" below.
+No horizon inference is needed: the vendor labels the windows itself, which
+retires the derivation assumption the original draft of this plan carried.
+`isAvailable` is "the `agy` binary exists". Credential handling — Keychain
+reads, OAuth refresh grants, project discovery — stays entirely inside
+Google's own binary. The direct cloud endpoint behind `/usage`
+(`POST .../v1internal:retrieveUserQuotaSummary`, see Evidence) is documented
+for a future revision but is NOT used: calling it from Metria would require
+either a Keychain read (rejected by the zero-prompt constraint) or a vendored
+OAuth client plus onboarding writes (rejected in Phase 0).
 
 ## Why this matters
 
@@ -114,123 +124,90 @@ bar, and PWA all iterate `ProviderKind.allCases`.
    Cursor is matched on its bundle path (`cursor.app`) to avoid a macOS helper
    with a colliding name; pick Antigravity match strings with the same care.
 
-## Phase 0 — Confirm the mechanism on the target machine (short)
+## Phase 0 — Confirm the mechanism on the target machine (short) — CLOSED 2026-09-04
 
-The mechanism is documented in the "Evidence" section and implemented by
-shipping third-party tools. What remains is confirming it against the
-Antigravity version at hand and — critically — confirming the reset-time
-horizons cluster into the short/long split the four windows assume, because
-none of it is a published contract.
+The original draft of this phase chased a direct cloud design (`oauth_creds.json`
++ `loadCodeAssist` + `fetchAvailableModels`). Running it refuted that design and
+produced the CLI-subprocess design above; the steps are kept as the executed
+record, with outcomes in the decision log.
 
-1. Confirm the credential is present and readable (keys only, never print values):
-   ```sh
-   python3 -c "import json;print(sorted(json.load(open('$HOME/.gemini/oauth_creds.json')).keys()))"
-   ```
-   Expect `access_token`, `refresh_token`, `expiry_date` (plus `id_token`,
-   `scope`, `token_type`).
-2. Discover the project ID:
-   ```sh
-   ACC=$(python3 -c "import json;print(json.load(open('$HOME/.gemini/oauth_creds.json'))['access_token'])")
-   curl -s -X POST https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist \
-     -H "Authorization: Bearer $ACC" -H 'Content-Type: application/json' \
-     -d '{"metadata":{"ideType":"ANTIGRAVITY"}}' | python3 -m json.tool | head -40
-   ```
-   Expect `cloudaicompanionProject` (string or `{id}`) and `planInfo.planType`.
-   Unset `ACC` when done (`unset ACC`); never paste the token into logs or chat.
-3. Confirm the quota shape and the horizon split:
-   ```sh
-   curl -s -X POST https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels \
-     -H "Authorization: Bearer $ACC" -H 'Content-Type: application/json' \
-     -H 'User-Agent: antigravity' -d '{"project":"<id-from-step-2>"}' \
-     | python3 -c "import json,sys; [print(k, v.get('quotaInfo')) for k,v in json.load(sys.stdin).get('models',{}).items() if v.get('quotaInfo')]"
-   ```
-   Expect per-model `quotaInfo` with `remainingFraction` and `resetTime`, and
-   expect the reset times to cluster into a short horizon (hours) and a long
-   horizon (days) within each model family.
-4. Record the Antigravity version and the response shape in the decision log.
-5. **Gate**: steps 1–3 answer with the expected shapes AND the horizon split
-   holds. If the token is expired, refresh it first via
-   `POST https://oauth2.googleapis.com/token` with
-   `grant_type=refresh_token` (proving Phase 2's refresh path); if the
-   endpoint refuses the token or the horizons do not split, stop and record
-   which one failed — do not guess a replacement. If the horizons do not
-   split, fall back to the two-window variant documented in Phase 2.
+1. Credential file keys (done): `~/.gemini/oauth_creds.json` holds
+   `access_token`, `refresh_token`, `expiry_date` — but its token was expired.
+2. Refresh + `loadCodeAssist` (done, refuted the cloud design): refresh with the
+   Antigravity OAuth client fails (`unauthorized_client` — the token was minted
+   for another client); refresh with the public Gemini CLI client succeeds, but
+   `loadCodeAssist` under that identity returns only tiers
+   (`allowedTiers: [standard-tier]`, free-tier `UNSUPPORTED_CLIENT`) with no
+   project. `onboardUser` was deliberately NOT called (state-changing,
+   potentially billing-related).
+3. Vendor's own answer (done, confirmed the design): after the contributor
+   signed in via the `agy` CLI, `agy -p "/usage" </dev/null` prints the four
+   windows with vendor labels, remaining percents, and ISO8601 resets in ~3 s
+   (full output in the decision log). Its quota call is
+   `POST .../v1internal:retrieveUserQuotaSummary` (CLI logs + binary strings).
+4. Direct `retrieveUserQuotaSummary` from outside `agy` (done, negative):
+   403 under the Gemini identity, 401 with the IDE's cached `state.vscdb` key
+   (stale). The fresh token is Keychain-only (`gemini`/`antigravity`), which
+   the zero-prompt constraint forbids the app from reading.
+5. **Gate: CLOSED.** The provider shells out to `agy` and parses its output;
+   no horizon inference, no credential handling, no Keychain code.
 
-## Phase 1 — Credential loading and refresh
+## Phase 1 — CLI discovery (no credential handling)
 
-Inside `AntigravityProvider.swift` (no separate store file — the credential is
-one JSON file, unlike Cursor's SQLite database).
+Inside `AntigravityProvider.swift` (no separate store file — there is no
+credential file to read, by design).
 
-- Read `~/.gemini/oauth_creds.json` with `JSONDecoder` into
-  `{accessToken, refreshToken, expiryDate}`. Every failure (missing file,
-  undecodable content) maps to `ProviderError.unavailable`, so `isAvailable`
-  is simply "the file exists and decodes".
-- `isAvailable`: file exists. `setupHint`:
-  "Sign in to Antigravity to make usage available."
-- Before the request, compare `expiry_date` (milliseconds since epoch) against
-  now; when expired, refresh first:
-  ```
-  POST https://oauth2.googleapis.com/token
-  Content-Type: application/x-www-form-urlencoded
-  body: grant_type=refresh_token&refresh_token=<refreshToken>
-        &client_id=1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com
-        &client_secret=<see note>
-  ```
-  **Note on the client secret**: the OAuth client ID and secret are the ones
-  Google issued to the Antigravity app itself and are already published in the
-  open-source tools in Evidence. Embedding a third party's OAuth client secret
-  is a maintainer decision — flag it in the PR. If the maintainer rejects it,
-  the fallback is read-only: use the fresh `apiKey` from the IDE's
-  `state.vscdb` (`antigravityAuthStatus` key, confirmed readable) while the IDE
-  runs, with no refresh, degrading to the setup hint when it expires.
-- On HTTP 401 from any API call, refresh once and retry (same shape as
-  `ClaudeProvider`'s 401 retry). Never write to `~/.gemini/` or to
-  Antigravity's directories.
-- `accountLabel`: the active email from `~/.gemini/google_accounts.json`
-  (`active` key, confirmed present), falling back to the `id_token` email
-  claim via the existing `KeychainReader.tokenEmail` helper. `planLabel`: the
-  `planInfo.planType` from `loadCodeAssist` (e.g. Pro/Ultra), best-effort.
-- Reuse the existing three-attempt / `Retry-After` / `ProviderError.http(status)`
-  handling (`apps/macos-native/Sources/Metria/Providers/OpenCodeGoProvider.swift:44-64`).
-- **Gate**: `swift build` passes; unavailable state (credential file moved away
-  temporarily) yields the setup hint, not a crash.
+- Locate the `agy` binary: the documented installer path
+  `~/.local/bin/agy` first, then each directory in `PATH`. Resolve once per
+  fetch (cheap) rather than caching across launches, so installs and removals
+  are picked up without a restart.
+- `isAvailable`: the binary exists AND is executable. Nothing else is probed —
+  in particular, never touch the Keychain and never read `~/.gemini/` or
+  Antigravity's directories. The zero-prompt constraint is structural: this
+  provider links no Security-framework code path that could prompt.
+- `setupHint`:
+  "Install the Antigravity CLI and sign in (agy login) to make usage available."
+- **Gate**: `swift build` passes; with the binary renamed away temporarily the
+  provider reports unavailable (setup hint, no card), and the other four
+  providers keep updating.
 
 ## Phase 2 — The provider
 
-New file `apps/macos-native/Sources/Metria/Providers/AntigravityProvider.swift`,
-modeled on `OpenCodeGoProvider` + `ClaudeProvider`'s refresh.
+`AntigravityProvider.swift`, modeled on `OpenCodeGoProvider`'s fetch shape but
+with a `Process` call instead of a `URLSession` call.
 
-- On each fetch: ensure a valid access token (Phase 1), then
-  `POST https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` with
-  `{"metadata":{"ideType":"ANTIGRAVITY"}}` to resolve the project ID
-  (`cloudaicompanionProject`, string or `{id}`), then
-  `POST https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels`
-  with `{"project": <id>}`, both with `Authorization: Bearer`,
-  `Content-Type: application/json`, `User-Agent: antigravity`,
-  `X-Goog-Api-Client: google-cloud-sdk vscode_cloudshelleditor/0.1`, and
-  `Client-Metadata: {"ideType":"ANTIGRAVITY","platform":"MACOS","pluginType":"GEMINI"}`.
-- Map the response into exactly four windows:
-  - `Self.fiveHourGeminiTitle` (`"5-hour Gemini"`), `Self.weeklyGeminiTitle`
-    (`"Weekly Gemini"`), `Self.fiveHourOthersTitle`
-    (`"5-hour other models"`), `Self.weeklyOthersTitle`
-    (`"Weekly other models"`) — all `String(localized:)`, all listed in
-    `usageWindowTitles`.
-  - Family split: model ID (or display name) contains `gemini` (case-insensitive)
-    → Gemini group, else others.
-  - Horizon split: `resetTime` within 24 hours of now → short group, else long
-    group. Skip models without `quotaInfo` (internal `chat_`/`tab_`/`rev`
-    models, image models — same exclusions the tools in Evidence apply).
-  - Each window's percent is `(1 - min(remainingFraction in group)) * 100`;
-    `resetDate` is the earliest `resetTime` in the group. A group with no
-    models yields no window for that group rather than an invented zero —
-    never render a percentage Metria had to invent.
-  - **Fallback if the Phase 0 horizon gate fails**: two windows by family only
-    (`"Gemini"`, `"Other models"`), each the min across all horizons. Implement
-    only the variant Phase 0 confirms — do not build both speculatively.
+- On each fetch, launch the resolved binary with fixed arguments
+  `["-p", "/usage"]`, stdin set to `/dev/null` (the command takes no input —
+  a closed stdin also keeps a signed-out CLI from blocking on an auth prompt),
+  and a hard timeout (30 seconds, well above the ~3 seconds observed). Capture
+  stdout only; discard stderr.
+- Parse stdout as tab-separated `<group> <window> <NN>% <ISO8601>` lines:
+  - Group `"Gemini Models"` → Gemini windows; group `"Claude and GPT models"`
+    (match case-insensitively, and treat any other group label as "other
+    models" so a vendor rename degrades to two correct windows rather than
+    zero) → other-model windows.
+  - Window `"Five Hour Limit Remaining"` → the 5-hour window;
+    `"Weekly Limit Remaining"` → the weekly window. Match on the
+    `Five Hour` / `Weekly` keywords so minor label edits do not break parsing.
+  - Each window: `percent = 100 - remaining`, `resetDate` from the ISO8601
+    timestamp (`ISO8601DateFormatter`, same as the other providers).
+  - All four titles are `String(localized:)` — `"5-hour Gemini"`,
+    `"Weekly Gemini"`, `"5-hour other models"`, `"Weekly other models"` — and
+    all are listed in `usageWindowTitles`.
+  - A group/window with no parseable line yields no window for that slot
+    rather than an invented zero — never render a percentage Metria had to
+    invent. If NO line parses, return `.failed` with the setup hint (covers
+    signed-out CLI, which hangs past no output, and format changes alike).
+- Non-zero exit status or timeout likewise maps to `.failed` with the setup
+  hint, never to a crash; per-provider failure isolation in `UsageStore` keeps
+  the other four providers updating.
+- `accountLabel`: the CLI prints no email, so leave it nil (the card renders
+  without an account line, like a provider with no session). `planLabel`: nil.
 - Register the instance in `ProviderRegistry.makeProviders()`.
-- **Gate**: with the credential present, `fetch()` returns `.loaded` with the
-  confirmed window count; with the credential absent, `.failed` with the setup
-  hint, and the other four providers keep updating.
+- **Gate**: with the CLI signed in, `fetch()` returns `.loaded` with four
+  windows whose percents equal `100 - remaining` from a manual
+  `agy -p "/usage"` run; with the CLI signed out, `.failed` with the setup
+  hint within the timeout.
 
 ## Phase 3 — Kind, presentation, and assets
 
@@ -240,8 +217,10 @@ modeled on `OpenCodeGoProvider` + `ClaudeProvider`'s refresh.
   `ProviderKind+Presentation.swift`: `symbol` (a reasonable SF Symbol fallback,
   e.g. `sparkle` — but not `sparkles`, which Claude uses), `logoName`
   (`antigravity-logo`), `sidebarProgressGradient`, and `reconnectCommand`. For
-  reconnect, use `open -a Antigravity` — it is a real shell command, which is
-  what the reconnect path requires (same reasoning as Cursor's `open -a Cursor`).
+  reconnect, use `agy login` — it is a real shell command that re-authenticates
+  the exact credential this provider depends on, which is what the reconnect
+  path requires (stronger than Cursor's `open -a Cursor`, because here the CLI
+  is the credential owner).
 - Extract the logo from the installed bundle and add it as
   `Assets/antigravity-logo.png` (square PNG, matching the other four):
   ```sh
@@ -288,54 +267,55 @@ modeled on `OpenCodeGoProvider` + `ClaudeProvider`'s refresh.
 
 ## Risks
 
-1. **Undocumented endpoints.** Neither `loadCodeAssist` nor
-   `fetchAvailableModels` is a public contract. Mitigation: one provider, two
-   adjacent decode sites, failures isolated per provider by `UsageStore`; the
-   card degrades to an error string rather than breaking the app.
-2. **Third-party OAuth client secret.** The refresh grant needs the Antigravity
-   app's own OAuth client ID/secret, which are public only because other
-   open-source tools publish them. Mitigation: maintainer call in review; the
-   read-only `state.vscdb` fallback in Phase 1 removes the need entirely at the
-   cost of working only while the IDE keeps its token fresh.
-3. **Derived windows.** The 5-hour/weekly split is inferred from reset-time
-   horizons, not stated by the API. Mitigation: Phase 0 gate plus the two-window
-   fallback; a group with no models produces no window, never a fabricated
-   percentage.
-4. **Credential location moves.** The path `~/.gemini/oauth_creds.json` is
-   shared with the Gemini CLI today and could move. Mitigation: `isAvailable`
-   checks the file, so the provider drops out quietly instead of failing
-   loudly; the `state.vscdb` `antigravityAuthStatus` key is the documented
-   second source.
-5. **Reading another app's credential.** Mitigation: read-only open, no writes
-   to `~/.gemini/` or Antigravity's directories ever; the token is sent only to
-   Google's own hosts.
+1. **Spawning a subprocess on every refresh.** The Cursor plan rejected shelling
+   out for a point read; here the fork is the whole design, because it is the
+   only zero-prompt path to a fresh credential. Mitigation: the call runs on
+   the existing ~5-minute refresh cadence (observed ~3 s, off the main actor),
+   with a hard timeout; a future optimization is gating Antigravity refreshes
+   on `ProviderActivityMonitor` activity. If the maintainer rejects subprocess
+   use outright, there is no fallback provider design under the zero-prompt
+   constraint — say so in the PR rather than silently adding Keychain code.
+2. **Undocumented CLI output.** `/usage` print output is not a published
+   contract and its labels can change. Mitigation: keyword matching (not full
+   strings), per-slot omission instead of invented values, total failure
+   degrading to the setup hint, and failures isolated per provider by
+   `UsageStore`; the card degrades to an error string rather than breaking the
+   app.
+3. **CLI-gated availability.** IDE-only users (no `agy` binary) get no card;
+   the setup hint must say the CLI is required. Mitigation: `isAvailable`
+   checks the binary, so the provider drops out quietly instead of failing
+   loudly; the CLI installs with one documented `curl | bash`.
+4. **Signed-out CLI hangs.** Without a session, `agy -p` blocks past 30 s with
+   no output (observed). Mitigation: closed stdin plus the hard timeout map
+   this to the setup hint; never wait indefinitely.
+5. **Reading another app's product.** Metria executes the vendor's binary and
+   parses its human-readable output. Mitigation: fixed argv, closed stdin, no
+   user data passed; the token is sent only to Google's own hosts by `agy`
+   itself, and Metria never sees any credential.
 6. **Scope creep into an Antigravity sign-in flow.** Out of scope. Metria reads
-   credentials that other apps created; it does not authenticate on their behalf.
+   quota the CLI already authenticated; it does not authenticate on the CLI's
+   behalf (beyond pasting `agy login` via Reconnect, which the user runs).
 
 ## Alternatives considered and rejected
 
-- **Local language-server API as the primary source**
-  (`POST 127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/GetUserStatus`
-  over Connect RPC): rejected as the default. It carries the same per-model
-  quota payload but requires the IDE to be running plus port/CSRF discovery
-  from process arguments on every refresh. Keep it as a fallback if the cloud
-  path is ever blocked.
+- **Direct cloud call with a Metria-held token**
+  (`POST .../v1internal:retrieveUserQuotaSummary` with a vendored OAuth
+  client): rejected. Phase 0 proved the only refreshable local token belongs
+  to the wrong identity (Gemini CLI → 403 `PERMISSION_DENIED`), the
+  Antigravity-identity token is Keychain-only, and obtaining a project under
+  the wrong identity needs `onboardUser` — a state-changing, potentially
+  billing-related write that was deliberately not attempted.
+- **Keychain read plus Metria-owned cache (the Claude pattern)**: rejected by
+  the contributor zero-prompt constraint. The current app never authorizes
+  Keychain access, and Antigravity support must not introduce the first prompt.
 - **Decoding the cached `userStatus` proto from `state.vscdb`**
   (`antigravityUnifiedStateSync.userStatus`, base64'd protobuf): rejected. It
-  needs a proto schema Metria does not have, and the JSON cloud response
-  carries the same data.
+  needs a proto schema Metria does not have, and the IDE's cached `apiKey`
+  alongside it is stale (401 `UNAUTHENTICATED` observed).
 - **One window per model**: rejected. Antigravity exposes a dozen-plus models;
    a card per model breaks the one-card-per-provider layout every surface
-  assumes. Four grouped windows fit the existing card that already renders
+  assumes. Four vendor-labeled windows fit the existing card that already renders
   three for OpenCode Go.
-- **Counting local Antigravity conversation files** (`~/.gemini/antigravity/`
-  `conversations/`) the way `CodexProvider` falls back to session files:
-  rejected as a quota source. Local transcripts record requests, not the
-  account quota, so any percentage would be fabricated. (Watching a directory
-  for *activity* in Phase 4 is fine; deriving *quota* from it is not.)
-- **Per-account multi-profile support** (`google_accounts.json` `active`/`old`):
-  rejected for v1. Metria reads the active account only, matching how every
-  other provider reads a single signed-in identity.
 
 ## Verification
 
@@ -347,15 +327,15 @@ Manual checks on a Mac with Antigravity signed in:
 
 1. Antigravity appears in Settings → Providers, enabled, with usage inside one
    refresh interval.
-2. Move `~/.gemini/oauth_creds.json` away temporarily: the card becomes
-   unavailable with the setup hint, and the other four providers keep updating.
-   Restore the file afterwards.
-3. "Diagnose" reports the real state; "Reconnect" opens Antigravity.
+2. Sign out (`agy` logout or Keychain removal): the card becomes
+   unavailable/failed with the setup hint within the timeout, and the other
+   four providers keep updating.
+3. "Diagnose" reports the real state; "Reconnect" pastes `agy login`.
 4. The notch rail, menu bar labels, dashboard (all four windows on hover), and
    paired PWA all show the Antigravity logo and percentages.
-5. Expired-token path: with an expired `access_token` in the credential file,
-   the next refresh recovers without user action (verify once, then leave the
-   file untouched).
+5. Signed-out hang path: with no CLI session, a refresh returns the setup hint
+   in seconds (timeout path), never blocks the other providers, and never
+   prompts for Keychain access.
 
 ## Evidence
 
@@ -400,6 +380,25 @@ inspection of a signed-in Mac.
   reads the same local API read-only.
 - **Logo source** — `/Applications/Antigravity.app/Contents/Resources/icon.icns`,
   confirmed present on the target machine; convert with `sips -s format png`.
+- **CLI `/usage` output (the provider's actual source)** — observed live on the
+  target machine 2026-09-04 with a signed-in `agy` (`~/.local/bin/agy`, the
+  documented installer path; the `~/.antigravity/…/agy` symlink is stale and
+  no CLI ships inside the IDE bundle):
+  ```sh
+  agy -p "/usage" </dev/null   # ~3 s, tab-separated, ISO8601 resets
+  ```
+  prints one line per window: group (`Gemini Models`, `Claude and GPT models`),
+  window (`Weekly Limit Remaining`, `Five Hour Limit Remaining`), remaining
+  percent, reset timestamp. Pre-sign-in the same command blocks past 30 s with
+  no output (hence closed stdin + hard timeout in Phase 2).
+- **Quota endpoint behind `/usage`** —
+  `POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`,
+  observed in `~/.gemini/antigravity-cli/log/cli-20260903_230115.log`
+  (`quota_manager.go doRefreshQuota`, `Cache(retrieveUserQuotaSummary)`);
+  proto surface from binary strings:
+  `google.internal.cloud.code.v1internal.RetrieveUserQuotaSummaryRequest/Response`,
+  `QuotaSummaryGroup`, `QuotaSummaryBucket{quotaBucketKey, remainingFraction}`.
+  NOT called by this provider (see rejected alternatives).
 - **Prior art at Metria's exact scope** — [openusage](https://github.com/robinebers/openusage)
   ships Cursor alongside Claude, Codex, and OpenCode reading machine-local
   credentials; Metria follows the same read-only posture for a fifth provider.
@@ -413,3 +412,63 @@ inspection of a signed-in Mac.
   Gemini/others); logo extracted from the installed app bundle. Phase 0 still
   has to confirm the reset-time horizon split on the target machine before any
   provider code is written.
+- **Phase 0 partial findings, 2026-09-04** (target machine, all secrets redacted,
+  nothing written anywhere):
+  - `~/.gemini/oauth_creds.json` exists with the expected keys; its
+    `access_token` was expired.
+  - Refresh with the Antigravity OAuth client fails (`unauthorized_client`):
+    this `refresh_token` was not minted for that client.
+  - Refresh with the public Gemini CLI OAuth client succeeds (proves the
+    refresh mechanics), but `loadCodeAssist` under that identity returns only
+    `allowedTiers: [standard-tier]` / `ineligibleTiers: [free-tier =
+    UNSUPPORTED_CLIENT, "migrate to the Antigravity suite"]` — no
+    `cloudaicompanionProject`. The Gemini CLI identity is the wrong identity
+    for Antigravity quota; calling `onboardUser` here would be a
+    state-changing (possibly billing-related) action and was deliberately NOT
+    attempted.
+  - The IDE's cached `apiKey` in `state.vscdb` (`antigravityAuthStatus`) is
+    stale: `loadCodeAssist` answers 401 `UNAUTHENTICATED`.
+  - `agy -p "/usage"` with closed stdin hangs (needs interactive auth); the
+    `agy` symlink under `~/.antigravity/` is stale (points at a removed
+    `Desktop/Antigravity.app`); no CLI binary ships inside
+    `/Applications/Antigravity.app`.
+  - Conclusion at the time: the remaining read-only probe was the loopback
+    language server while the IDE runs. SUPERSEDED by the CLI activation and
+    the gate closure below — no IDE probing was needed.
+- **Phase 0 resumed, 2026-09-04** (target machine, contributor activated via
+  `agy` CLI on the same account):
+  - `agy -p "/usage"` (stdin closed) prints exactly the four requested windows:
+    `Gemini Models / Weekly Limit Remaining 98% / 2026-09-10T18:19:58Z`,
+    `Gemini Models / Five Hour Limit Remaining 100% / 2026-09-04T07:04:27Z`,
+    `Claude and GPT models / Weekly Limit Remaining 100% / 2026-09-11T02:04:27Z`,
+    `Claude and GPT models / Five Hour Limit Remaining 100% / 2026-09-04T07:04:27Z`.
+    Horizon split CONFIRMED from the vendor's own labels — no inference needed.
+    Note the values are REMAINING fractions, so Metria maps
+    `percent = 100 - remaining`.
+  - `agy`'s quota call is `POST {daily,prod}-cloudcode-pa…/v1internal:retrieveUserQuotaSummary`
+    (confirmed in `~/.gemini/antigravity-cli/log/cli-20260903_230115.log`:
+    `quota_manager.go doRefreshQuota`, `Cache(retrieveUserQuotaSummary)`).
+    Binary strings give the proto surface:
+    `google.internal.cloud.code.v1internal.RetrieveUserQuotaSummaryRequest/Response`,
+    `QuotaSummaryGroup`, `QuotaSummaryBucket{quotaBucketKey, remainingFraction}`.
+  - The CLI's fresh credential is Keychain-only: generic password
+    service `gemini` / account `antigravity`, `mdat` = CLI activation time.
+    `~/.gemini/oauth_creds.json` was NOT touched by the CLI login.
+  - `retrieveUserQuotaSummary` with `{}` under the Gemini CLI identity answers
+    403 `PERMISSION_DENIED` on both daily and prod hosts — smoke test only, no
+    writes.
+- **Phase 0 closed, 2026-09-04** (contributor constraint: zero Keychain prompts
+  in the shipped app — the current app never prompts):
+  - The approved one-time Keychain read (terminal only, token kept in a shell
+    variable, never printed or stored) returned a 690-char opaque token that is
+    neither `ya29.`, JWT, `1//` refresh, nor JSON; it answers 401 on
+    `retrieveUserQuotaSummary` under both hosts. It is the CLI's private token
+    format — reverse-engineering it would work around the vendor's credential
+    handling, so investigation stops here per this plan's own rule.
+  - `agy --help` shows no dedicated quota subcommand; `/usage` via print mode
+    is the interface. `agy -p "/usage" </dev/null` is stable across runs
+    (~2.8 s wall, fresh resets each call) and needs no Keychain code in Metria.
+  - Pivot locked: provider = `Process` + TSV parse (Phases 1–2 rewritten);
+    direct-cloud and Keychain designs moved to Alternatives as rejected. The
+    horizon-inference assumption from the first draft is retired — the vendor
+    labels the windows itself.
