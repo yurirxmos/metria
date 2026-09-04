@@ -13,7 +13,8 @@ enum ProviderRegistry {
             ClaudeProvider(),
             CodexProvider(),
             OpenCodeGoProvider(),
-            CursorProvider()
+            CursorProvider(),
+            AntigravityProvider()
         ]
     }
 }

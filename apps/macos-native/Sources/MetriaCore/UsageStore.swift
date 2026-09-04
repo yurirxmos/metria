@@ -86,6 +86,7 @@ public enum ProviderKind: String, CaseIterable, Identifiable, Hashable {
     case codex = "Codex"
     case openCodeGo = "OpenCode Go"
     case cursor = "Cursor"
+    case antigravity = "Antigravity"
 
     public var id: String { rawValue }
 }

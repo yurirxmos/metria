@@ -22,6 +22,7 @@ let package = Package(
                 "apps/macos-native/Sources/Metria/LocalNetwork.swift",
                  "apps/macos-native/Sources/Metria/LocalPWAServer.swift",
                  "apps/macos-native/Sources/Metria/ProviderActivityMonitor.swift",
+                "apps/macos-native/Sources/Metria/Providers/AntigravityProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/ClaudeProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/CodexProvider.swift",
                 "apps/macos-native/Sources/Metria/Providers/CursorProvider.swift",
