@@ -15,7 +15,7 @@ undocumented vendor endpoint sight unseen.
 |---|---|---|---|---|---|
 | 001 | Add a maintainable Electron companion without replacing native macOS | P1 | L | — | Superseded by the repository split |
 | 002 | Add a Cursor usage provider to the native macOS app | P2 | M | — | DONE |
-| 003 | Add an Antigravity usage provider to the native macOS app | P2 | M | — | Implemented on `chore/antigravity-plan`, awaiting PR |
+| 003 | Add an Antigravity usage provider to the native macOS app | P2 | M | — | Draft PR [#5](https://github.com/yurirxmos/metria/pull/5) |
 
 ## Plans that moved with their app
 
