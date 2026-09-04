@@ -38,7 +38,7 @@ dependencies or risking the release pipeline.
 - Details (all baked into the PNG): radial blue glow behind the mascot, a
   "WORKS WITH" label ABOVE the five provider mini-logos, a subtle divider
   with a 46px breathing gap before the cards, and numbered microcopy under
-  each target ("1 Drag the app" / "2 Drop it here").
+  each target ("1 Drag the app" / "2 Drop it here", 18pt semibold blue).
 - Finder draws icon labels ("Metria", "Applications") in black with no API to
   force light text, so each icon sits on a baked WHITE card (176x152,
   y 276-428) — black labels stay readable on the cards. Verified live.
