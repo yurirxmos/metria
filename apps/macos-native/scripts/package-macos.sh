@@ -97,7 +97,7 @@ tell application "Finder"
     set background picture of iconViewOpts to POSIX file "$volume/.background/background.png"
     -- Icon size 72 centered in the 176x152 baked cards (slots {170,332}/{490,332}):
     -- 72px icon spans 296-368, Finder label lands ~372-392, baked captions at
-    -- ~404. Finder `position` is the icon CENTER, not the top-left.
+    -- ~404. Finder position is the icon CENTER, not the top-left.
     set position of item "Metria.app" of dmgWindow to {170, 332}
     set position of item "Applications" of dmgWindow to {490, 332}
     set position of item ".background" of dmgWindow to {1000, 1000}
