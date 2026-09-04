@@ -137,7 +137,9 @@ ditto --norsrc "$APP_BUNDLE" "$BUILD_DIR/dmg-root/$APP_NAME.app"
 ln -s /Applications "$BUILD_DIR/dmg-root/Applications"
 if ! build_styled_dmg "$BUILD_DIR/dmg-root" "$DMG_PATH" "$APP_NAME"; then
     printf '%s\n' "Warning: styled DMG failed; shipping a bare DMG instead." >&2
-    hdiutil detach "/Volumes/${APP_NAME}-staging-$" >/dev/null 2>&1 || true
+    # Sweep the same mountpoint build_styled_dmg attached ($$ is this shell's
+    # PID, identical inside the function), in case its detach retries failed.
+    hdiutil detach "/Volumes/${APP_NAME}-staging-$$" >/dev/null 2>&1 || true
     rm -f "$BUILD_DIR/.dmg-scratch.dmg"
     hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
 fi
@@ -153,11 +155,12 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     ditto --norsrc "$APP_BUNDLE" "$BUILD_DIR/dmg-root/$APP_NAME.app"
     ln -s /Applications "$BUILD_DIR/dmg-root/Applications"
     if ! build_styled_dmg "$BUILD_DIR/dmg-root" "$DMG_PATH" "$APP_NAME"; then
-    printf '%s\n' "Warning: styled DMG failed; shipping a bare DMG instead." >&2
-    hdiutil detach "/Volumes/${APP_NAME}-staging-$" >/dev/null 2>&1 || true
-    rm -f "$BUILD_DIR/.dmg-scratch.dmg"
-    hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
-fi
+        printf '%s\n' "Warning: styled DMG failed; shipping a bare DMG instead." >&2
+        # Same computed mountpoint as build_styled_dmg ($$ is shared).
+        hdiutil detach "/Volumes/${APP_NAME}-staging-$$" >/dev/null 2>&1 || true
+        rm -f "$BUILD_DIR/.dmg-scratch.dmg"
+        hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
+    fi
 fi
 
 rm -rf "$BUILD_DIR/dmg-root"
