@@ -12,7 +12,7 @@ import MetriaCore
 struct AntigravityProvider: UsageProvider {
     let kind = ProviderKind.antigravity
     var isAvailable: Bool { Self.resolveBinary() != nil }
-    let setupHint = String(localized: "Install the Antigravity CLI and sign in (agy login) to make usage available.")
+    let setupHint = String(localized: "Install Antigravity and sign in to make usage available.")
     static let fiveHourGeminiTitle = String(localized: "5-hour Gemini")
     static let weeklyGeminiTitle = String(localized: "Weekly Gemini")
     static let fiveHourOthersTitle = String(localized: "5-hour other models")

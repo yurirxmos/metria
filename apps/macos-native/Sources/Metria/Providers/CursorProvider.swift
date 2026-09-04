@@ -8,8 +8,10 @@ import MetriaCore
 struct CursorProvider: UsageProvider {
     let kind = ProviderKind.cursor
     let setupHint = String(localized: "Sign in to Cursor to make usage available.")
+    static let autoUsageTitle = String(localized: "Auto usage")
+    static let apiUsageTitle = String(localized: "API usage")
     static let thisCycleTitle = String(localized: "This cycle")
-    let usageWindowTitles = [thisCycleTitle]
+    let usageWindowTitles = [autoUsageTitle, apiUsageTitle]
 
     private var stateStore: CursorStateStore {
         CursorStateStore(databaseURL: FileManager.default.homeDirectoryForCurrentUser
@@ -26,11 +28,9 @@ struct CursorProvider: UsageProvider {
             guard !Self.isExpired(token) else { throw ProviderError.http(401) }
             let data = try await requestUsage(token: token)
             let usage = try JSONDecoder().decode(CursorUsageResponse.self, from: data)
-            guard let measure = usage.measure else { throw ProviderError.unavailable }
-            return .loaded(ProviderUsage(kind: kind, windows: [
-                UsageWindow(title: Self.thisCycleTitle, percent: measure.percent, resetDate: usage.billingCycleEndDate,
-                            usedCents: measure.usedCents, limitCents: measure.limitCents)
-            ], updatedAt: Date(), error: nil))
+            let windows = usage.windows(resetDate: usage.billingCycleEndDate)
+            guard !windows.isEmpty else { throw ProviderError.unavailable }
+            return .loaded(ProviderUsage(kind: kind, windows: windows, updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError
             let message: String
@@ -127,6 +127,8 @@ struct CursorProvider: UsageProvider {
         struct PlanUsage: Decodable {
             let includedSpend: Double?
             let limit: Double?
+            let autoPercentUsed: Double?
+            let apiPercentUsed: Double?
             let totalPercentUsed: Double?
         }
 
@@ -135,6 +137,21 @@ struct CursorProvider: UsageProvider {
             let individualLimit: Double?
             let overallUsed: Double?
             let overallLimit: Double?
+        }
+
+        func windows(resetDate: Date?) -> [UsageWindow] {
+            let percentWindows = [
+                planUsage?.autoPercentUsed.map { UsageWindow(title: CursorProvider.autoUsageTitle, percent: clamped($0), resetDate: resetDate) },
+                planUsage?.apiPercentUsed.map { UsageWindow(title: CursorProvider.apiUsageTitle, percent: clamped($0), resetDate: resetDate) }
+            ].compactMap { $0 }
+            guard percentWindows.isEmpty else { return percentWindows }
+            guard let measure else { return [] }
+            return [UsageWindow(title: CursorProvider.thisCycleTitle, percent: measure.percent, resetDate: resetDate,
+                                usedCents: measure.usedCents, limitCents: measure.limitCents)]
+        }
+
+        private func clamped(_ percent: Double) -> Double {
+            min(max(percent, 0), 100)
         }
     }
 }

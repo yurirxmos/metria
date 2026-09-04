@@ -166,7 +166,7 @@ credential file to read, by design).
   Antigravity's directories. The zero-prompt constraint is structural: this
   provider links no Security-framework code path that could prompt.
 - `setupHint`:
-  "Install the Antigravity CLI and sign in (agy login) to make usage available."
+   "Install the Antigravity CLI, open Antigravity, and sign in to make usage available."
 - **Gate**: `swift build` passes; with the binary renamed away temporarily the
   provider reports unavailable (setup hint, no card), and the other four
   providers keep updating.
@@ -217,10 +217,8 @@ with a `Process` call instead of a `URLSession` call.
   `ProviderKind+Presentation.swift`: `symbol` (a reasonable SF Symbol fallback,
   e.g. `sparkle` — but not `sparkles`, which Claude uses), `logoName`
   (`antigravity-logo`), `sidebarProgressGradient`, and `reconnectCommand`. For
-  reconnect, use `agy login` — it is a real shell command that re-authenticates
-  the exact credential this provider depends on, which is what the reconnect
-  path requires (stronger than Cursor's `open -a Cursor`, because here the CLI
-  is the credential owner).
+  reconnect, use `open -a Antigravity` to open the app where the CLI-owned
+  credential is authenticated.
 - Extract the logo from the installed bundle and add it as
   `Assets/antigravity-logo.png` (square PNG, matching the other four):
   ```sh
@@ -294,7 +292,7 @@ with a `Process` call instead of a `URLSession` call.
    itself, and Metria never sees any credential.
 6. **Scope creep into an Antigravity sign-in flow.** Out of scope. Metria reads
    quota the CLI already authenticated; it does not authenticate on the CLI's
-   behalf (beyond pasting `agy login` via Reconnect, which the user runs).
+    behalf; Reconnect only opens Antigravity so the user can authenticate there.
 
 ## Alternatives considered and rejected
 
@@ -330,7 +328,7 @@ Manual checks on a Mac with Antigravity signed in:
 2. Sign out (`agy` logout or Keychain removal): the card becomes
    unavailable/failed with the setup hint within the timeout, and the other
    four providers keep updating.
-3. "Diagnose" reports the real state; "Reconnect" pastes `agy login`.
+3. "Diagnose" reports the real state; "Reconnect" opens Antigravity.
 4. The notch rail, menu bar labels, dashboard (all four windows on hover), and
    paired PWA all show the Antigravity logo and percentages.
 5. Signed-out hang path: with no CLI session, a refresh returns the setup hint

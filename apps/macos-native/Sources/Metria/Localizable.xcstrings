@@ -1,6 +1,16 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "API usage" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Uso da API" } }
+      }
+    },
+    "Auto usage" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Uso automático" } }
+      }
+    },
     "5-hour Gemini" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gemini de 5 horas" } }
@@ -191,9 +201,9 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Instale o Claude Code e faça login para disponibilizar o uso." } }
       }
     },
-    "Install the Antigravity CLI and sign in (agy login) to make usage available." : {
+    "Install Antigravity and sign in to make usage available." : {
       "localizations" : {
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Instale o Antigravity CLI e faça login (agy login) para disponibilizar o uso." } }
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Instale o Antigravity e faça login para disponibilizar o uso." } }
       }
     },
     "Keep the provider rail visible or collapse it until you hover over the notch." : {

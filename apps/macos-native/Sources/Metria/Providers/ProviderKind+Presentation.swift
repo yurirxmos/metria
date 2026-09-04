@@ -15,7 +15,7 @@ extension ProviderKind {
         case .codex: "codex login"
         case .openCodeGo: "opencode auth login"
         case .cursor: "open -a Cursor"
-        case .antigravity: "agy login"
+        case .antigravity: "open -a Antigravity"
         }
     }
 
