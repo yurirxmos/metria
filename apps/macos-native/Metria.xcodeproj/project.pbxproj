@@ -26,6 +26,7 @@
 		A58CC89CB7D116D25908E8DB /* UsageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E4C6F8FCF0C2AE2E932ED6F /* UsageStore.swift */; };
 		B0D16525171231FFE5C69C84 /* OpenCodeGoProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488A30C52B2A951130A87634 /* OpenCodeGoProvider.swift */; };
 		BCAAA4FF3E584906BD4F3006 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F76937A0473449017F3EB57 /* OnboardingView.swift */; };
+		BD14854124859D3F61FFB61D /* AntigravityProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 358AA6325C40633CC548F9A3 /* AntigravityProvider.swift */; };
 		C60A0D354E8CDD43466B3457 /* CursorStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2144FE93ADD1A194EEA0D854 /* CursorStateStore.swift */; };
 		E87CBB5215F9C3C201D860CE /* UsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C81534D399ED080DD3983A /* UsageSnapshot.swift */; };
 		EF5641DDF417468BFB615AAD /* ClaudeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */; };
@@ -64,6 +65,7 @@
 		18B16A90CF8351DF99C63A8A /* LocalNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNetwork.swift; sourceTree = "<group>"; };
 		2144FE93ADD1A194EEA0D854 /* CursorStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorStateStore.swift; sourceTree = "<group>"; };
 		329ED075E7D446A1AB88C85C /* CursorProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorProvider.swift; sourceTree = "<group>"; };
+		358AA6325C40633CC548F9A3 /* AntigravityProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityProvider.swift; sourceTree = "<group>"; };
 		36216E6ACB911FA08CA36234 /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
 		384012F0494BF87B637ABDE9 /* Metria.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Metria.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B98B0A12299F11B2D7262C2 /* ProviderRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderRegistry.swift; sourceTree = "<group>"; };
@@ -137,6 +139,7 @@
 		5B52A35A5B1800D8DF53A0E9 /* Providers */ = {
 			isa = PBXGroup;
 			children = (
+				358AA6325C40633CC548F9A3 /* AntigravityProvider.swift */,
 				FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */,
 				0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */,
 				329ED075E7D446A1AB88C85C /* CursorProvider.swift */,
@@ -248,8 +251,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				C6EBFF1B2C0DD064A95140F6 /* MetriaCore */,
 				8A020C55B9EF86C0751F6D4E /* Metria */,
+				C6EBFF1B2C0DD064A95140F6 /* MetriaCore */,
 			);
 		};
 /* End PBXProject section */
@@ -293,6 +296,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BD14854124859D3F61FFB61D /* AntigravityProvider.swift in Sources */,
 				EF5641DDF417468BFB615AAD /* ClaudeProvider.swift in Sources */,
 				31F56B15827398A3510322E7 /* CodexProvider.swift in Sources */,
 				0F9FCD0AAA8D78AACD6FA6FA /* CursorProvider.swift in Sources */,
