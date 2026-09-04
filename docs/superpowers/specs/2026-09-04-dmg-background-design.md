@@ -25,23 +25,28 @@ dependencies or risking the release pipeline.
 ## UI composition (approved mockup B)
 
 - Window 660x440pt; dark gradient `#0a0a0c` to `#1a1a22`.
-- Top center: mascot (`Assets/metria-mascot.png`, ~120pt), title "Metria"
-  semibold, tagline "monitor your usage without leaving your flow" secondary.
-- Bottom row: `Metria.app` icon left (~170,290), arrow baked into the
-  background center, `Applications` symlink right (~490,290). Both icons
-  render at the SAME visual size (80px) — explicit contributor requirement.
+- Top center: mascot (`Assets/metria-mascot.png`, 84pt), title "Metria"
+  semibold, tagline "Monitor your usage without leaving your flow" secondary.
+- Bottom row: `Metria.app` icon left ({170,332}), arrow baked into the
+  background center (icon mid-height), `Applications` symlink right
+  ({490,332}). Both icons render at the SAME visual size (72px) — explicit
+  contributor requirement. Finder `position` is the icon CENTER: with 72px
+  icons the glyphs span 296-368, Finder labels land ~372-392, baked captions
+  at ~404 — all inside the cards. (An earlier revision placed icons at y=290
+  assuming top-left anchoring; they overflowed the card tops and were fixed
+  here.)
 - Details (all baked into the PNG): radial blue glow behind the mascot, a
-  "WORKS WITH" label ABOVE the five provider mini-logos, a subtle divider,
-  and numbered microcopy under each target ("1 Drag the app" / "2 Drop it
-  here").
+  "WORKS WITH" label ABOVE the five provider mini-logos, a subtle divider
+  with a 46px breathing gap before the cards, and numbered microcopy under
+  each target ("1 Drag the app" / "2 Drop it here").
 - Finder draws icon labels ("Metria", "Applications") in black with no API to
-  force light text, so each icon sits on a baked WHITE card (176x140) — black
-  labels stay readable on the cards. Verified live.
+  force light text, so each icon sits on a baked WHITE card (176x152,
+  y 276-428) — black labels stay readable on the cards. Verified live.
 
 ## Layout script behavior
 
 - After staging `dmg-root` (app + symlink + `.background/background.png`),
-  run `osascript`: set window bounds, `icon size 128`, `background picture`,
+  run `osascript`: set window bounds, `icon size 72`, `background picture`,
   icon positions, `arrange by none`. Runs in both the plain and the
   notarization DMG rebuild paths in `package-macos.sh`.
 - The `.background` folder must be hidden in the final window (set
