@@ -472,3 +472,11 @@ inspection of a signed-in Mac.
     direct-cloud and Keychain designs moved to Alternatives as rejected. The
     horizon-inference assumption from the first draft is retired — the vendor
     labels the windows itself.
+- **Implemented + verified live, 2026-09-04** (branch `chore/antigravity-plan`):
+  `swift build` green, `xcodegen` regen committed (new file only), `make run`
+  (`xcodebuild` Debug) BUILD SUCCEEDED. The launched app auto-enabled
+  Antigravity via the `knownProviderKinds` migration and cached four live
+  windows (`5-hour Gemini 0%`, `Weekly Gemini 2%`, `5-hour other models 0%`,
+  `Weekly other models 0%` — matching a manual `agy -p "/usage"` run);
+  Claude/Codex/Cursor/OpenCode Go kept updating. Remaining manual check: logo
+  rendering + hover card in Settings/notch (needs eyes on the GUI).
