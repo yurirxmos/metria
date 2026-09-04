@@ -43,7 +43,11 @@ final class ProviderActivityMonitor: ObservableObject {
         .claude: ["claude"],
         .codex: ["codex"],
         .openCodeGo: ["opencode"],
-        .cursor: ["cursor.app"]
+        .cursor: ["cursor.app"],
+        // Antigravity is matched on its bundle path plus the CLI binary's path
+        // suffix: a bare "agy" substring would be too loose, the same way a
+        // bare "cursor" was for Cursor above.
+        .antigravity: ["antigravity.app", "/agy"]
     ]
 
     // Cursor has no per-session files: its agent conversations live in the same
@@ -56,7 +60,10 @@ final class ProviderActivityMonitor: ObservableObject {
         .claude: [".claude/projects"],
         .codex: [".codex/sessions"],
         .openCodeGo: [".local/share/opencode/storage"],
-        .cursor: ["Library/Application Support/Cursor/User/globalStorage"]
+        .cursor: ["Library/Application Support/Cursor/User/globalStorage"],
+        // Same reasoning as Cursor: agent activity lands in the globalStorage
+        // database WAL, while a merely open IDE writes nothing.
+        .antigravity: ["Library/Application Support/Antigravity/User/globalStorage"]
     ]
 
     /// Reads every process's full command line directly via `sysctl`, avoiding the cost

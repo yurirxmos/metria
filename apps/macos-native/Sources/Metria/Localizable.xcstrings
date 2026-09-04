@@ -1,9 +1,19 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "5-hour Gemini" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gemini de 5 horas" } }
+      }
+    },
     "5-hour limit" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limite de 5 horas" } }
+      }
+    },
+    "5-hour other models" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Outros modelos de 5 horas" } }
       }
     },
     "A lightweight usage monitor for your AI providers." : {
@@ -179,6 +189,11 @@
     "Install Claude Code and sign in to make usage available." : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Instale o Claude Code e faça login para disponibilizar o uso." } }
+      }
+    },
+    "Install the Antigravity CLI and sign in (agy login) to make usage available." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Instale o Antigravity CLI e faça login (agy login) para disponibilizar o uso." } }
       }
     },
     "Keep the provider rail visible or collapse it until you hover over the notch." : {
@@ -676,9 +691,19 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aviso" } }
       }
     },
+    "Weekly Gemini" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gemini semanal" } }
+      }
+    },
     "Weekly limit" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limite semanal" } }
+      }
+    },
+    "Weekly other models" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Outros modelos semanais" } }
       }
     },
     "%@ color" : {

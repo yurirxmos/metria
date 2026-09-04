@@ -152,7 +152,7 @@ struct OnboardingView: View {
             }
             Text("Metria AI")
                 .font(.title2.weight(.semibold))
-            Text("Metria tracks your AI coding usage across Claude, Codex, OpenCode Go, and Cursor, right from your Mac.")
+            Text("Metria tracks your AI coding usage across Claude, Codex, OpenCode Go, Cursor, and Antigravity, right from your Mac.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

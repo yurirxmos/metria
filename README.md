@@ -62,6 +62,7 @@ Providers are enabled automatically only when their local credentials or usage f
 - **Codex / OpenCode** — credentials read from `~/.local/share/opencode/auth.json` and local session files.
 - **OpenCode Go** — API key read from the same `auth.json`, usage fetched from the OpenCode Go endpoint.
 - **Cursor** — session JWT read from Cursor's `state.vscdb` (its VS Code-derived global storage), usage fetched from the endpoint Cursor's own dashboard calls. That endpoint is not published by Cursor and can change without notice, outside this project's control. Cursor is the only provider that reports what a cycle costs, so its card can show dollars as well as a percentage.
+- **Antigravity** — no credential is read at all: usage comes from running the installed `agy` CLI (`agy -p "/usage"`) and parsing its four reported windows (5-hour/weekly × Gemini/other models). The CLI authenticates itself from its own Keychain entry, so Metria never authorizes Keychain access. Requires the Antigravity CLI; the `/usage` output format is not published by Google and can change without notice, outside this project's control.
 
 The native app reads credentials at runtime from the Keychain and local configuration files. See the [native provider sources](apps/macos-native/Sources/Metria/Providers/).
 
