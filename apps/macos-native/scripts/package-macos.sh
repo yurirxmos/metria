@@ -66,11 +66,43 @@ else
 fi
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
+# Styles the DMG installer window: background art, fixed icon positions and
+# window size. Best-effort by design — AppleScript Finder control can fail on
+# headless runners, and a bare DMG is always preferable to a failed release.
+layout_dmg_window() {
+    local dmg_root="$1"
+    mkdir -p "$dmg_root/.background"
+    cp "$ROOT_DIR/Assets/dmg-background@2x.png" "$dmg_root/.background/background.png"
+    SetFile -a V "$dmg_root/.background" 2>/dev/null || true
+    osascript <<EOF >/dev/null 2>&1 || return 0
+tell application "Finder"
+    open POSIX file "$dmg_root"
+    set dmgWindow to Finder window 1
+    set current view of dmgWindow to icon view
+    set toolbar visible of dmgWindow to false
+    set statusbar visible of dmgWindow to false
+    set bounds of dmgWindow to {100, 100, 760, 540}
+    set iconViewOpts to icon view options of dmgWindow
+    set arrangement of iconViewOpts to not arranged
+    set icon size of iconViewOpts to 96
+    set background picture of iconViewOpts to POSIX file "$dmg_root/.background/background.png"
+    set position of item "Metria.app" of dmgWindow to {170, 300}
+    set position of item "Applications" of dmgWindow to {490, 300}
+    set position of item ".background" of dmgWindow to {1000, 1000}
+    close dmgWindow
+    open POSIX file "$dmg_root"
+    close Finder window 1
+end tell
+EOF
+    return 0
+}
+
 ditto --norsrc -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
 
 mkdir -p "$BUILD_DIR/dmg-root"
 ditto --norsrc "$APP_BUNDLE" "$BUILD_DIR/dmg-root/$APP_NAME.app"
 ln -s /Applications "$BUILD_DIR/dmg-root/Applications"
+layout_dmg_window "$BUILD_DIR/dmg-root"
 hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
 
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
@@ -83,6 +115,7 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     mkdir -p "$BUILD_DIR/dmg-root"
     ditto --norsrc "$APP_BUNDLE" "$BUILD_DIR/dmg-root/$APP_NAME.app"
     ln -s /Applications "$BUILD_DIR/dmg-root/Applications"
+    layout_dmg_window "$BUILD_DIR/dmg-root"
     hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
 fi
 
