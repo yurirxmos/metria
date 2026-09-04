@@ -69,32 +69,58 @@ codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 # Styles the DMG installer window: background art, fixed icon positions and
 # window size. Best-effort by design — AppleScript Finder control can fail on
 # headless runners, and a bare DMG is always preferable to a failed release.
+#
+# Takes a MOUNTED volume path (not a plain directory): Finder flushes
+# .DS_Store on detach, which plain staging dirs never trigger.
 layout_dmg_window() {
-    local dmg_root="$1"
-    mkdir -p "$dmg_root/.background"
-    cp "$ROOT_DIR/Assets/dmg-background.png" "$dmg_root/.background/background.png"
-    SetFile -a V "$dmg_root/.background" 2>/dev/null || true
+    local volume="$1"
+    mkdir -p "$volume/.background"
+    cp "$ROOT_DIR/Assets/dmg-background.png" "$volume/.background/background.png"
+    SetFile -a V "$volume/.background" 2>/dev/null || true
     osascript <<EOF >/dev/null 2>&1 || return 0
 tell application "Finder"
-    open POSIX file "$dmg_root"
+    open POSIX file "$volume"
     set dmgWindow to Finder window 1
     set current view of dmgWindow to icon view
     set toolbar visible of dmgWindow to false
-    set statusbar visible of dmgWindow to false
+    -- Counter-intuitive but verified: hiding the status bar leaves a white
+    -- filler strip on current macOS, while showing it renders fully dark.
+    set statusbar visible of dmgWindow to true
     set bounds of dmgWindow to {100, 100, 760, 620}
     set iconViewOpts to icon view options of dmgWindow
     set arrangement of iconViewOpts to not arranged
     set icon size of iconViewOpts to 96
-    set background picture of iconViewOpts to POSIX file "$dmg_root/.background/background.png"
+    set background picture of iconViewOpts to POSIX file "$volume/.background/background.png"
     set position of item "Metria.app" of dmgWindow to {170, 300}
     set position of item "Applications" of dmgWindow to {490, 300}
     set position of item ".background" of dmgWindow to {1000, 1000}
+    delay 2
     close dmgWindow
-    open POSIX file "$dmg_root"
-    close Finder window 1
 end tell
 EOF
     return 0
+}
+
+# Builds a styled read-only DMG from a staging dir via a writable scratch
+# image (mount -> layout -> detach flushes .DS_Store -> convert to UDZO).
+build_styled_dmg() {
+    local dmg_root="$1" dmg_path="$2" volname="$3"
+    local scratch="$BUILD_DIR/.dmg-scratch.dmg"
+    rm -f "$scratch"
+    local size_mb
+    size_mb=$(du -sm "$dmg_root" | cut -f1)
+    hdiutil create -volname "$volname" -srcfolder "$dmg_root" -ov -format UDRW -size "$((size_mb + 20))m" "$scratch" >/dev/null || return 1
+    # Unique mountpoint: never collide with a user-mounted older Metria DMG
+    # (same volume name), which would style — or fail to detach — the wrong disk.
+    local mountpoint="/Volumes/${volname}-staging-$$"
+    hdiutil attach "$scratch" -mountpoint "$mountpoint" -nobrowse >/dev/null || return 1
+    layout_dmg_window "$mountpoint"
+    if ! hdiutil detach "$mountpoint" >/dev/null 2>&1; then
+        sleep 2
+        hdiutil detach "$mountpoint" >/dev/null 2>&1 || hdiutil detach "$mountpoint" -force >/dev/null 2>&1 || return 1
+    fi
+    hdiutil convert "$scratch" -format UDZO -o "$dmg_path" >/dev/null || return 1
+    rm -f "$scratch"
 }
 
 ditto --norsrc -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
@@ -102,8 +128,12 @@ ditto --norsrc -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
 mkdir -p "$BUILD_DIR/dmg-root"
 ditto --norsrc "$APP_BUNDLE" "$BUILD_DIR/dmg-root/$APP_NAME.app"
 ln -s /Applications "$BUILD_DIR/dmg-root/Applications"
-layout_dmg_window "$BUILD_DIR/dmg-root"
-hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
+if ! build_styled_dmg "$BUILD_DIR/dmg-root" "$DMG_PATH" "$APP_NAME"; then
+    printf '%s\n' "Warning: styled DMG failed; shipping a bare DMG instead." >&2
+    hdiutil detach "/Volumes/${APP_NAME}-staging-$" >/dev/null 2>&1 || true
+    rm -f "$BUILD_DIR/.dmg-scratch.dmg"
+    hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
+fi
 
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
@@ -115,8 +145,12 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     mkdir -p "$BUILD_DIR/dmg-root"
     ditto --norsrc "$APP_BUNDLE" "$BUILD_DIR/dmg-root/$APP_NAME.app"
     ln -s /Applications "$BUILD_DIR/dmg-root/Applications"
-    layout_dmg_window "$BUILD_DIR/dmg-root"
+    if ! build_styled_dmg "$BUILD_DIR/dmg-root" "$DMG_PATH" "$APP_NAME"; then
+    printf '%s\n' "Warning: styled DMG failed; shipping a bare DMG instead." >&2
+    hdiutil detach "/Volumes/${APP_NAME}-staging-$" >/dev/null 2>&1 || true
+    rm -f "$BUILD_DIR/.dmg-scratch.dmg"
     hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
+fi
 fi
 
 rm -rf "$BUILD_DIR/dmg-root"

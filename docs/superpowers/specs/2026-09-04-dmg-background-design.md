@@ -65,3 +65,23 @@ dependencies or risking the release pipeline.
 - Notarization/stapling flow changes. License/readme files in the DMG.
   Localized background variants. Lite-mode or retina-1x variants (2x PNG
   downscales cleanly).
+
+## Verification log (2026-09-04, branch `chore/dmg-background`)
+
+- Built `dist/Metria-dev-arm64.dmg` via `VERSION=dev bash
+  apps/macos-native/scripts/package-macos.sh` (ad-hoc sign path, no notary).
+- Mounted DMG shows the full branded window: mascot, "Metria", "Monitor your
+  usage without leaving your flow", WORKS WITH above the five marks, divider,
+  arrow, Metria.app left + Applications right at equal 96px with both slot
+  captions legible, dark path + status bars, no `.background` visible.
+- Findings applied during verification: background art must be 660x440
+  (Finder maps pixels 1:1 to points); window is 660x520 outer so captions fit
+  without a scrollbar; status bar stays VISIBLE (hiding it leaves a white
+  filler strip on current macOS); UDRW mount -> layout -> detach flow is
+  required because Finder only flushes `.DS_Store` on detach; unique staging
+  mountpoint avoids colliding with user-mounted older Metria DMGs, with
+  fallback to the bare DMG on any failure.
+- Smoke test: copied Metria.app from the mounted DMG to /tmp (never
+  /Applications); `codesign --verify --deep --strict` passes.
+- Cleaned: detached volume, removed dist artifacts and temp files; no
+  `.DS_Store` or staging files in the working tree.
