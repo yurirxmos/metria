@@ -39,7 +39,7 @@ extension ProviderKind {
         case .cursor:
             LinearGradient(colors: [.gray, .white], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .antigravity:
-            LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [.blue, .blue], startPoint: .leading, endPoint: .trailing)
         }
     }
 }

@@ -1444,7 +1444,7 @@ struct SidebarProviderItem: View {
         case .codex: return .blue
         case .openCodeGo: return .white
         case .cursor: return .gray
-        case .antigravity: return .purple
+        case .antigravity: return .blue
         }
     }
 
