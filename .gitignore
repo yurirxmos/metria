@@ -18,6 +18,7 @@ node_modules/
 .claude/
 /skills-lock.json
 .superpowers/
+docs/superpowers/
 
 # Local iOS signing team (per-developer, never committed)
 /apps/ios/Local.xcconfig
