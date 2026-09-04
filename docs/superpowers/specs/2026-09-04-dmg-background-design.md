@@ -27,13 +27,16 @@ dependencies or risking the release pipeline.
 - Window 660x440pt; dark gradient `#0a0a0c` to `#1a1a22`.
 - Top center: mascot (`Assets/metria-mascot.png`, ~120pt), title "Metria"
   semibold, tagline "monitor your usage without leaving your flow" secondary.
-- Bottom row: `Metria.app` icon left (~160,220), arrow baked into the
-  background center, `Applications` symlink right (~500,220). Both icons
-  render at the SAME visual size (96px) — explicit contributor requirement.
+- Bottom row: `Metria.app` icon left (~170,290), arrow baked into the
+  background center, `Applications` symlink right (~490,290). Both icons
+  render at the SAME visual size (80px) — explicit contributor requirement.
 - Details (all baked into the PNG): radial blue glow behind the mascot, a
-  "WORKS WITH" strip with the five provider mini-logos (existing Assets),
-  a subtle divider, and numbered microcopy under each target ("1 Drag the
-  app" / "2 Drop it here").
+  "WORKS WITH" label ABOVE the five provider mini-logos, a subtle divider,
+  and numbered microcopy under each target ("1 Drag the app" / "2 Drop it
+  here").
+- Finder draws icon labels ("Metria", "Applications") in black with no API to
+  force light text, so each icon sits on a baked WHITE card (176x140) — black
+  labels stay readable on the cards. Verified live.
 
 ## Layout script behavior
 

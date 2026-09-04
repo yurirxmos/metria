@@ -89,10 +89,10 @@ tell application "Finder"
     set bounds of dmgWindow to {100, 100, 760, 620}
     set iconViewOpts to icon view options of dmgWindow
     set arrangement of iconViewOpts to not arranged
-    set icon size of iconViewOpts to 96
+    set icon size of iconViewOpts to 80
     set background picture of iconViewOpts to POSIX file "$volume/.background/background.png"
-    set position of item "Metria.app" of dmgWindow to {170, 300}
-    set position of item "Applications" of dmgWindow to {490, 300}
+    set position of item "Metria.app" of dmgWindow to {170, 290}
+    set position of item "Applications" of dmgWindow to {490, 290}
     set position of item ".background" of dmgWindow to {1000, 1000}
     delay 2
     close dmgWindow
