@@ -15,6 +15,7 @@ undocumented vendor endpoint sight unseen.
 |---|---|---|---|---|---|
 | 001 | Add a maintainable Electron companion without replacing native macOS | P1 | L | — | Superseded by the repository split |
 | 002 | Add a Cursor usage provider to the native macOS app | P2 | M | — | DONE |
+| 003 | Add an Antigravity usage provider to the native macOS app | P2 | M | — | Planned, Phase 0 gate open |
 
 ## Plans that moved with their app
 
@@ -32,6 +33,10 @@ credential location and the usage endpoint are documented in its Evidence
 section, but they are not a published Cursor contract, so they must be
 reconfirmed against the Cursor version at hand before either implementation is
 changed.
+
+Note: the number 003 below refers to the original pre-split plan that moved to
+`metria-win-linux`. It is unrelated to the current plan 003 (Antigravity
+provider) in the execution table above; the number was intentionally reused.
 
 ## Findings considered and rejected
 
