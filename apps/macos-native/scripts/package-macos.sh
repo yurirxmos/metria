@@ -72,7 +72,7 @@ codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 layout_dmg_window() {
     local dmg_root="$1"
     mkdir -p "$dmg_root/.background"
-    cp "$ROOT_DIR/Assets/dmg-background@2x.png" "$dmg_root/.background/background.png"
+    cp "$ROOT_DIR/Assets/dmg-background.png" "$dmg_root/.background/background.png"
     SetFile -a V "$dmg_root/.background" 2>/dev/null || true
     osascript <<EOF >/dev/null 2>&1 || return 0
 tell application "Finder"
@@ -81,7 +81,7 @@ tell application "Finder"
     set current view of dmgWindow to icon view
     set toolbar visible of dmgWindow to false
     set statusbar visible of dmgWindow to false
-    set bounds of dmgWindow to {100, 100, 760, 540}
+    set bounds of dmgWindow to {100, 100, 760, 620}
     set iconViewOpts to icon view options of dmgWindow
     set arrangement of iconViewOpts to not arranged
     set icon size of iconViewOpts to 96
