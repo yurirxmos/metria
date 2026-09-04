@@ -86,7 +86,11 @@ tell application "Finder"
     -- Counter-intuitive but verified: hiding the status bar leaves a white
     -- filler strip on current macOS, while showing it renders fully dark.
     set statusbar visible of dmgWindow to true
-    set bounds of dmgWindow to {100, 100, 760, 620}
+    -- Outer 530pt: measured chrome (title + path + status bars) is ~90pt, so
+    -- content lands at exactly the 440pt art height — no white default view
+    -- background below the art, no clipped captions. Art carries a 30pt
+    -- seamless gradient footer as insurance for other macOS chrome sizes.
+    set bounds of dmgWindow to {100, 100, 760, 630}
     set iconViewOpts to icon view options of dmgWindow
     set arrangement of iconViewOpts to not arranged
     set icon size of iconViewOpts to 72
