@@ -6,7 +6,7 @@
 > [Related repositories](#related-repositories).
 
 <p align="center">
-  <img src="https://i.imgur.com/shpAcSm.gif" alt="Metria demo" width="720" />
+  <img src="https://i.imgur.com/JrV7abR.png" alt="Metria banner" width="480" />
 </p>
 
 <p align="center">
@@ -20,7 +20,6 @@
 
 - [What it does](#what-it-does)
 - [Download](#download)
-- [To do](#to-do)
 - [Providers](#providers)
 - [Mobile PWA](#mobile-pwa)
 - [Requirements](#requirements)
@@ -34,6 +33,10 @@
 
 Metria shows current session and monthly usage percentages for supported AI providers.
 
+<p align="center">
+  <a href="https://imgur.com/a/ktIc5JB"><img src="https://i.imgur.com/SYzKb0e.gif" alt="Metria demo" width="720" /></a>
+</p>
+
 - **Floating sidebar** — hover a provider logo to preview its usage card.
 - **Menu bar** — compact text labels for each provider.
 - **Dashboard popover** — ring gauges plus detailed per-provider cards.
@@ -45,14 +48,6 @@ The native app stores provider selection, display mode, sidebar position, and op
 Pick your platform, open the installer, and you're all set. Browse macOS installers on the [Releases page](https://github.com/yurirxmos/metria/releases).
 
 Download the native `.dmg` for Apple Silicon or Intel Macs.
-
-## To do
-
-- Build native iOS and Android apps to improve usage update delivery and replace the existing PWA.
-
-### Shared
-
-- Add usage-aware sounds and animations.
 
 ## Providers
 

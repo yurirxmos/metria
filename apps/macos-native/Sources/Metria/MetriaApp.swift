@@ -576,6 +576,7 @@ struct DashboardUsageCard: View {
 struct PopoverContent: View {
     @ObservedObject var store: UsageStore
     let alertSettings: MenuBarAlertSettings
+    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -612,7 +613,14 @@ struct PopoverContent: View {
                         }
                     }
                 }
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.size.height
+                } action: { height in
+                    contentHeight = height
+                }
             }
+            .frame(height: min(contentHeight, 580))
 
             Divider()
 
@@ -621,7 +629,8 @@ struct PopoverContent: View {
                 .foregroundStyle(.secondary)
         }
         .padding(12)
-        .frame(width: 440, height: 700)
+        .frame(width: 440)
+        .fixedSize(horizontal: false, vertical: true)
         .background(Color.black)
         .preferredColorScheme(.dark)
     }
@@ -2871,7 +2880,6 @@ extension NSMenu {
     private func configurePopover() {
         popover = NSPopover()
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 440, height: 700)
         popover.contentViewController = NSHostingController(
             rootView: PopoverContent(store: store, alertSettings: menuBarAlertSettings)
         )
