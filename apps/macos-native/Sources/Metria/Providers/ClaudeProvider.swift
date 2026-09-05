@@ -67,6 +67,7 @@ struct ClaudeProvider: UsageProvider {
     private func requestUsage(token: String) async throws -> Data {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -83,6 +84,7 @@ struct ClaudeProvider: UsageProvider {
     private func requestAccountEmail(token: String) async throws -> String? {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/profile")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
