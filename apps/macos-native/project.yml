@@ -52,7 +52,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.metria.app
         PRODUCT_NAME: Metria
-        MARKETING_VERSION: 0.1.6
+        MARKETING_VERSION: 0.2.0
         CURRENT_PROJECT_VERSION: 1
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         SWIFT_VERSION: "5.9"

@@ -262,14 +262,7 @@ public final class UsageStore: ObservableObject {
             .compactMap { kind in
                 guard enabledProviderKinds.contains(kind),
                     availableProviderKinds.contains(kind),
-                    let usage = providers.first(where: { $0.kind == kind }),
-                    // Gate on having ever produced real usage data, not on being
-                    // error-free: a provider that's rate-limited or hit a transient
-                    // failure still has legitimate data to show (with its error surfaced
-                    // alongside it). Only a provider that has never returned anything —
-                    // e.g. one that merely looks configured (a leftover local file) but
-                    // has no valid session — should be excluded entirely.
-                    !usage.windows.isEmpty
+                    let usage = providers.first(where: { $0.kind == kind })
                 else { return nil }
                 return usage
             }
@@ -326,6 +319,9 @@ public final class UsageStore: ObservableObject {
         }
         guard updatedKinds != enabledProviderKinds else { return }
         enabledProviderKinds = updatedKinds
+        if isEnabled, providers.allSatisfy({ $0.kind != kind }) {
+            providers.append(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil))
+        }
         markConfigurationAsCustom()
         defaults.set(updatedKinds.map(\.rawValue), forKey: enabledProvidersKey)
         updateVisibleProviders()

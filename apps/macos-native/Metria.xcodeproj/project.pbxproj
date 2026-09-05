@@ -251,8 +251,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				8A020C55B9EF86C0751F6D4E /* Metria */,
 				C6EBFF1B2C0DD064A95140F6 /* MetriaCore */,
+				8A020C55B9EF86C0751F6D4E /* Metria */,
 			);
 		};
 /* End PBXProject section */
@@ -421,7 +421,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.6;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.metria.app;
 				PRODUCT_NAME = Metria;
 				SDKROOT = macosx;
@@ -477,7 +477,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.6;
+				MARKETING_VERSION = 0.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.metria.app;
 				PRODUCT_NAME = Metria;
 				SDKROOT = macosx;

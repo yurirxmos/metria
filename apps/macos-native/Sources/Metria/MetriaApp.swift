@@ -2712,7 +2712,7 @@ extension NSMenu {
     private func updateStatusItem(_ providers: [ProviderUsage]) {
         let title = NSMutableAttributedString()
         let usages = providers.sorted { $0.kind.rawValue < $1.kind.rawValue }.filter {
-            store.enabledProviderKinds.contains($0.kind) && $0.primary != nil
+            store.enabledProviderKinds.contains($0.kind)
         }
 
         for (index, usage) in usages.enumerated() {
@@ -2729,7 +2729,6 @@ extension NSMenu {
                 title.append(NSAttributedString(attachment: attachment))
                 title.append(NSAttributedString(string: " "))
             }
-            let percent = usage.primary!.percent
             if showMenuBarProviderNames {
                 let name = usage.kind == .openCodeGo ? "Go" : usage.kind.rawValue
                 title.append(
@@ -2737,15 +2736,21 @@ extension NSMenu {
                         string: "\(name) ",
                         attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
             }
-            var percentageAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
-            ]
-            if let color = menuBarAlertColor(for: percent) {
-                percentageAttributes[.foregroundColor] = color
+            if let primary = usage.primary {
+                var percentageAttributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
+                ]
+                if let color = menuBarAlertColor(for: primary.percent) {
+                    percentageAttributes[.foregroundColor] = color
+                }
+                title.append(
+                    NSAttributedString(
+                        string: "\(Int(primary.percent.rounded()))%", attributes: percentageAttributes))
+            } else {
+                title.append(
+                    NSAttributedString(
+                        string: "--", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
             }
-            title.append(
-                NSAttributedString(
-                    string: "\(Int(percent.rounded()))%", attributes: percentageAttributes))
         }
         statusItem.button?.image = nil
         statusItem.button?.attributedTitle =
@@ -3464,7 +3469,7 @@ extension NSMenu {
         set { UserDefaults.standard.set(newValue, forKey: "showsNotch") }
     }
     private var showsMenuBar: Bool {
-        get { UserDefaults.standard.object(forKey: "showsMenuBar") as? Bool ?? false }
+        get { UserDefaults.standard.object(forKey: "showsMenuBar") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "showsMenuBar") }
     }
 
@@ -3474,9 +3479,13 @@ extension NSMenu {
         guard UserDefaults.standard.object(forKey: "showsNotch") == nil,
             UserDefaults.standard.object(forKey: "showsMenuBar") == nil
         else { return }
-        let legacyMode = UserDefaults.standard.string(forKey: "displayMode")
-        showsNotch = legacyMode != "menuBar"
-        showsMenuBar = legacyMode == "menuBar"
+        if let legacyMode = UserDefaults.standard.string(forKey: "displayMode") {
+            showsNotch = legacyMode != "menuBar"
+            showsMenuBar = legacyMode == "menuBar"
+        } else {
+            showsNotch = true
+            showsMenuBar = true
+        }
         UserDefaults.standard.removeObject(forKey: "displayMode")
     }
 
