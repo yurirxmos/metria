@@ -103,7 +103,12 @@ jobs:
 
   publish:
     needs: package
-    runs-on: macos-14
+    # Needs an Xcode new enough for `swift build` to know about SwiftUI APIs the app
+    # target uses (e.g. onGeometryChange, added to the SDK in Xcode 16) — macos-14
+    # runners can default to an older Xcode that predates it and fail this step with
+    # "has no member", even though the API is annotated back to macOS 13. Match the
+    # `package` job's runner so both jobs build against the same, current toolchain.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
 
