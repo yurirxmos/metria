@@ -1,4 +1,5 @@
 import Foundation
+import MetriaCore
 import Security
 
 /// Reads credentials that other apps store in the macOS Keychain on the user's behalf.
@@ -9,54 +10,106 @@ import Security
 /// macOS treats every rebuild as a different app and re-prompts each time. To avoid that, the
 /// first authorized read is cached to a file Metria owns; later launches read that file and
 /// never touch the Keychain again, exactly like the Antigravity/Codex providers do.
+///
+/// Every read is scoped to a `ClaudeProfile`: each profile keeps its own credential, its own
+/// on-disk cache file (matching the one Claude Code files its token under), and its own
+/// in-memory copy, so two `~/.claude-<slug>` logins never collide.
 enum KeychainReader {
-    private static let claudeCredentialsLock = NSLock()
-    private static var cachedClaudeCredentials: ClaudeCredentials?
-    private static var attemptedClaudeCredentialsRead = false
+    private static let lock = NSLock()
+    private static var cachedClaudeCredentials: [String: ClaudeCredentials] = [:]  // key: ProviderID.rawValue
+    private static var attemptedClaudeCredentialsReads: Set<String> = []
 
-    static var hasClaudeCredentials: Bool {
-        claudeCredentialsLock.lock()
-        let isReadSuccessful = cachedClaudeCredentials != nil
-        let hasAttemptedRead = attemptedClaudeCredentialsRead
-        claudeCredentialsLock.unlock()
+    static func hasClaudeCredentials(for profile: ClaudeProfile) -> Bool {
+        lock.lock()
+        let isReadSuccessful = cachedClaudeCredentials[profile.providerID.rawValue] != nil
+        let hasAttemptedRead = attemptedClaudeCredentialsReads.contains(profile.providerID.rawValue)
+        lock.unlock()
         // Do not probe the Keychain while UsageStore is being initialized. The first actual
         // provider fetch performs the single protected read instead.
         return isReadSuccessful || !hasAttemptedRead
     }
 
-    static func readClaudeCredentials() throws -> ClaudeCredentials {
-        claudeCredentialsLock.lock()
-        defer { claudeCredentialsLock.unlock() }
-        if let cachedClaudeCredentials { return cachedClaudeCredentials }
-        guard !attemptedClaudeCredentialsRead else { throw ProviderError.unavailable }
-        attemptedClaudeCredentialsRead = true
+    static func readClaudeCredentials(for profile: ClaudeProfile) throws -> ClaudeCredentials {
+        let id = profile.providerID
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = cachedClaudeCredentials[id.rawValue] { return cached }
+        guard !attemptedClaudeCredentialsReads.contains(id.rawValue) else { throw ProviderError.unavailable }
+        attemptedClaudeCredentialsReads.insert(id.rawValue)
 
         // The disk cache (written after the very first authorized Keychain read) is the normal
         // path — it never prompts. Only fall through to the Keychain when there is no cache.
-        if let cachedDocument = ClaudeCredentialCache.load(),
+        if let cachedDocument = ClaudeCredentialCache.load(for: id),
            let credentials = makeCredentials(from: cachedDocument) {
-            cachedClaudeCredentials = credentials
+            cachedClaudeCredentials[id.rawValue] = credentials
             return credentials
         }
 
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Claude Code-credentials",
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else {
-            throw ProviderError.unavailable
+        if let document = readKeychainDocument(services: profile.keychainServices),
+           let credentials = makeCredentials(from: document) {
+            cachedClaudeCredentials[id.rawValue] = credentials
+            ClaudeCredentialCache.save(for: id, document)
+            return credentials
         }
-        guard let document = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let credentials = makeCredentials(from: document) else {
-            throw ProviderError.unavailable
+        throw ProviderError.unavailable
+    }
+
+    /// Reads the newest Keychain generic password across the candidate service names a
+    /// profile may use, so the live token wins over a stale, unsuffixed duplicate.
+    private static func readKeychainDocument(services: [String]) -> [String: Any]? {
+        var newestItem: (date: Date, document: [String: Any])?
+        for service in services {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecReturnAttributes as String: true,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne,
+            ]
+            var result: CFTypeRef?
+            guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+                  let item = result as? [String: Any],
+                  let data = item[kSecValueData as String] as? Data,
+                  let document = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let modified = item[kSecAttrModificationDate as String] as? Date
+            else { continue }
+            if newestItem == nil || modified > newestItem!.date {
+                newestItem = (modified, document)
+            }
         }
-        cachedClaudeCredentials = credentials
-        ClaudeCredentialCache.save(document)
-        return credentials
+        return newestItem?.document
+    }
+
+    static func storeClaudeCredentials(
+        _ credentials: ClaudeCredentials,
+        accessToken: String,
+        refreshToken: String?,
+        for profile: ClaudeProfile
+    ) {
+        let id = profile.providerID
+        lock.lock()
+        defer { lock.unlock() }
+        guard var oauth = credentials.document["claudeAiOauth"] as? [String: Any] else { return }
+
+        oauth["accessToken"] = accessToken
+        if let refreshToken {
+            oauth["refreshToken"] = refreshToken
+        }
+        var document = credentials.document
+        document["claudeAiOauth"] = oauth
+        guard let updatedCredentials = makeCredentials(from: document) else { return }
+
+        cachedClaudeCredentials[id.rawValue] = updatedCredentials
+        ClaudeCredentialCache.save(for: id, document)
+    }
+
+    static func invalidateClaudeCredentialsCache(for profile: ClaudeProfile) {
+        let id = profile.providerID
+        lock.lock()
+        cachedClaudeCredentials[id.rawValue] = nil
+        attemptedClaudeCredentialsReads.remove(id.rawValue)
+        lock.unlock()
+        ClaudeCredentialCache.remove(for: id)
     }
 
     private static func makeCredentials(from document: [String: Any]) -> ClaudeCredentials? {
@@ -71,35 +124,50 @@ enum KeychainReader {
         )
     }
 
-    /// The single on-disk copy of Claude Code's credential, kept restricted to the current user.
-    /// Deliberately JSON so the same loading logic used for the Keychain document can read it.
+    /// One on-disk copy per profile of Claude Code's credential, kept restricted to the
+    /// current user. Deliberately JSON so the same loading logic used for the Keychain
+    /// document can read it. The default profile keeps the original, unsuffixed file name so
+    /// an existing cache survives the multi-account change untouched.
     private enum ClaudeCredentialCache {
-        private static var fileURL: URL {
-            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        private static var directoryURL: URL {
+            FileManager.default
+                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("Metria", isDirectory: true)
-                .appendingPathComponent("claude-credentials.json")
         }
 
-        static func load() -> [String: Any]? {
-            guard let data = try? Data(contentsOf: fileURL),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return nil
-            }
+        static func fileURL(for id: ProviderID) -> URL {
+            let name = id.isDefaultAccount
+                ? "claude-credentials"
+                : "claude-credentials-\(id.slug!)"
+            return directoryURL.appendingPathComponent("\(name).json")
+        }
+
+        static func load(for id: ProviderID) -> [String: Any]? {
+            guard let data = try? Data(contentsOf: fileURL(for: id)),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return nil }
             return object
         }
 
-        static func save(_ document: [String: Any]) {
+        static func save(for id: ProviderID, _ document: [String: Any]) {
             do {
-                let directory = fileURL.deletingLastPathComponent()
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
-                try data.write(to: fileURL, options: .atomic)
-                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+                try FileManager.default.createDirectory(
+                    at: directoryURL, withIntermediateDirectories: true)
+                let data = try JSONSerialization.data(
+                    withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
+                try data.write(to: fileURL(for: id), options: .atomic)
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o600], ofItemAtPath: fileURL(for: id).path)
             } catch {
                 // Best-effort. If the write fails the provider still works; it just re-reads the
                 // Keychain (and re-prompts) next launch.
-                FileHandle.standardError.write("[KeychainReader] cache save failed: \(error)\n".data(using: .utf8)!)
+                FileHandle.standardError.write(
+                    "[KeychainReader] cache save failed: \(error)\n".data(using: .utf8)!)
             }
+        }
+
+        static func remove(for id: ProviderID) {
+            try? FileManager.default.removeItem(at: fileURL(for: id))
         }
     }
 

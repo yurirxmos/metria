@@ -4,7 +4,7 @@ import MetriaCore
 
 @MainActor
 final class ProviderActivityMonitor: ObservableObject {
-    @Published private(set) var activeProviderKinds: Set<ProviderKind> = []
+    @Published private(set) var activeProviderIDs: Set<ProviderID> = []
 
     private var monitoringTask: Task<Void, Never>?
 
@@ -16,13 +16,13 @@ final class ProviderActivityMonitor: ObservableObject {
                     Self.detectActiveProviders()
                 }.value
                 guard let self, !Task.isCancelled else { return }
-                self.activeProviderKinds = activeProviders
+                self.activeProviderIDs = activeProviders
                 try? await Task.sleep(for: .seconds(2))
             }
         }
     }
 
-    nonisolated private static func detectActiveProviders() -> Set<ProviderKind> {
+    nonisolated private static func detectActiveProviders() -> Set<ProviderID> {
         let runningProcesses = runningProcessCommands()
         let candidateKinds = processNamesByProvider.compactMap { kind, processNames -> ProviderKind? in
             let hasMatchingProcess = runningProcesses.contains { command in
@@ -57,7 +57,6 @@ final class ProviderActivityMonitor: ObservableObject {
     // The directory sees no writes at all while Cursor merely sits open, so a recent mtime
     // means real activity and not just a running app.
     nonisolated private static let sessionDirectoriesByProvider: [ProviderKind: [String]] = [
-        .claude: [".claude/projects"],
         .codex: [".codex/sessions"],
         .openCodeGo: [".local/share/opencode/storage"],
         .cursor: ["Library/Application Support/Cursor/User/globalStorage"],
@@ -65,6 +64,24 @@ final class ProviderActivityMonitor: ObservableObject {
         // database WAL, while a merely open IDE writes nothing.
         .antigravity: ["Library/Application Support/Antigravity/User/globalStorage"]
     ]
+
+    /// Maps a provider id onto the directories that count as activity for that *account*.
+    /// A multi-account provider (Claude) gets one entry per discovered profile so a work
+    /// session scripts only the work ring; single-account providers keep the per-kind scan.
+    nonisolated private static var sessionDirectoriesByProviderID: [ProviderID: [String]] {
+        var result: [ProviderID: [String]] = [:]
+        for profile in ClaudeProfile.discover() {
+            let name = profile.configDirectory.lastPathComponent
+            result[profile.providerID] = ["\(name)/projects", "\(name)/sessions"]
+        }
+        for (kind, paths) in sessionDirectoriesByProvider {
+            let id = ProviderID(kind: kind)
+            if result[id] == nil {
+                result[id] = paths
+            }
+        }
+        return result
+    }
 
     /// Reads every process's full command line directly via `sysctl`, avoiding the cost
     /// of forking `/bin/ps` on every polling cycle.
@@ -116,36 +133,40 @@ final class ProviderActivityMonitor: ObservableObject {
         return arguments
     }
 
-    nonisolated private static func recentSessionProviders(for candidates: Set<ProviderKind>) -> Set<ProviderKind> {
+    nonisolated private static func recentSessionProviders(for candidates: Set<ProviderKind>) -> Set<ProviderID> {
         let cutoff = Date().addingTimeInterval(-15)
         let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
-        var providers = Set<ProviderKind>()
+        var providers = Set<ProviderID>()
 
         for kind in candidates {
-            guard let paths = sessionDirectoriesByProvider[kind] else { continue }
-            for path in paths {
-                let directory = homeDirectory.appendingPathComponent(path)
-                guard let enumerator = FileManager.default.enumerator(
-                    at: directory,
-                    includingPropertiesForKeys: [.contentModificationDateKey],
-                    options: [.skipsHiddenFiles]
-                ) else { continue }
-
-                let hasRecentFile = enumerator.lazy.compactMap { item -> Date? in
-                    guard let url = item as? URL else { return nil }
-                    return try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-                }.contains { date in
-                    date >= cutoff
+            let matchingIDs = sessionDirectoriesByProviderID.keys.filter { $0.kind == kind }
+            for id in matchingIDs {
+                guard let paths = sessionDirectoriesByProviderID[id] else { continue }
+                let hasRecent = paths.contains { path in
+                    let directory = homeDirectory.appendingPathComponent(path)
+                    return hasRecentFile(in: directory, since: cutoff)
                 }
-
-                if hasRecentFile {
-                    providers.insert(kind)
-                    break
+                if hasRecent {
+                    providers.insert(id)
                 }
             }
         }
 
         return providers
+    }
+
+    nonisolated private static func hasRecentFile(in directory: URL, since cutoff: Date) -> Bool {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return false }
+        return enumerator.lazy.compactMap { item -> Date? in
+            guard let url = item as? URL else { return nil }
+            return try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        }.contains { date in
+            date >= cutoff
+        }
     }
 
     deinit {

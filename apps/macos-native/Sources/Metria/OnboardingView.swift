@@ -22,13 +22,11 @@ struct OnboardingView: View {
     @ObservedObject var store: UsageStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = Step.welcome
-    @State private var showsNotch: Bool
-    @State private var showsMenuBar: Bool
+    @State private var displaySurface: DisplaySurface
     @State private var mascotIsFloating = false
     @State private var providerCheckTimedOut = false
 
-    let onToggleNotch: (Bool) -> Void
-    let onToggleMenuBar: (Bool) -> Void
+    let onSelectDisplaySurface: (DisplaySurface) -> Void
     let onReconnect: (ProviderKind) -> Void
     let onFinish: () -> Void
 
@@ -36,18 +34,15 @@ struct OnboardingView: View {
         store: UsageStore,
         showsNotch: Bool,
         showsMenuBar: Bool,
-        onToggleNotch: @escaping (Bool) -> Void,
-        onToggleMenuBar: @escaping (Bool) -> Void,
+        onSelectDisplaySurface: @escaping (DisplaySurface) -> Void,
         onReconnect: @escaping (ProviderKind) -> Void,
         onFinish: @escaping () -> Void
     ) {
         self.store = store
-        self.onToggleNotch = onToggleNotch
-        self.onToggleMenuBar = onToggleMenuBar
+        self.onSelectDisplaySurface = onSelectDisplaySurface
         self.onReconnect = onReconnect
         self.onFinish = onFinish
-        _showsNotch = State(initialValue: showsNotch)
-        _showsMenuBar = State(initialValue: showsMenuBar)
+        _displaySurface = State(initialValue: DisplaySurface(showsNotch: showsNotch, showsMenuBar: showsMenuBar))
     }
 
     var body: some View {
@@ -116,8 +111,7 @@ struct OnboardingView: View {
         .background(Color.black)
         .foregroundStyle(.white)
         .preferredColorScheme(.dark)
-        .onChange(of: showsNotch) { onToggleNotch($0) }
-        .onChange(of: showsMenuBar) { onToggleMenuBar($0) }
+        .onChange(of: displaySurface) { onSelectDisplaySurface($0) }
         .task(id: step) {
             guard step == .providers else { return }
             providerCheckTimedOut = false
@@ -166,19 +160,19 @@ struct OnboardingView: View {
             stepHeader("Connect your providers", subtitle: "Metria looks for credentials already stored on this Mac. Nothing is uploaded or copied.")
             ScrollView {
                 VStack(spacing: 10) {
-                    ForEach(ProviderKind.allCases) { kind in
+                    ForEach(store.registeredProviderIDs, id: \.self) { id in
                         ProviderOnboardingRow(
-                            kind: kind,
-                            isAvailable: store.isProviderAvailable(kind),
-                            isDetected: isProviderDetected(kind),
-                            isChecking: kind == .cursor && !providerCheckTimedOut,
-                            isEnabled: store.enabledProviderKinds.contains(kind),
-                            accountLabel: store.providers.first(where: { $0.kind == kind })?.accountLabel,
-                            setupHint: store.setupHint(for: kind),
-                            onToggle: { store.setProviderEnabled(kind, isEnabled: $0) },
+                            id: id,
+                            isAvailable: store.isProviderAvailable(id),
+                            isDetected: isProviderDetected(id),
+                            isChecking: id.kind == .cursor && !providerCheckTimedOut,
+                            isEnabled: store.enabledProviderIDs.contains(id),
+                            accountLabel: store.providers.first(where: { $0.id == id })?.accountLabel,
+                            setupHint: store.setupHint(for: id),
+                            onToggle: { store.setProviderEnabled(id, isEnabled: $0) },
                             onReconnect: {
-                                store.setProviderEnabled(kind, isEnabled: true)
-                                onReconnect(kind)
+                                store.setProviderEnabled(id, isEnabled: true)
+                                onReconnect(id.kind)
                             }
                         )
                     }
@@ -190,33 +184,26 @@ struct OnboardingView: View {
         }
     }
 
-    private func isProviderDetected(_ kind: ProviderKind) -> Bool {
-        if kind == .cursor {
+    private func isProviderDetected(_ id: ProviderID) -> Bool {
+        if id.kind == .cursor {
             // A rate-limited or transiently-failing Cursor session still has real data —
             // only the total absence of usage windows means there's no valid session yet.
-            return store.providers.contains { $0.kind == kind && !$0.windows.isEmpty }
+            return store.providers.contains { $0.id == id && !$0.windows.isEmpty }
         }
-        return store.isProviderAvailable(kind)
+        return store.isProviderAvailable(id)
     }
 
     private var displayStep: some View {
         VStack(alignment: .leading, spacing: 18) {
             stepHeader("Choose where to see Metria", subtitle: "You can change these choices anytime in General settings.")
-            VStack(spacing: 12) {
-                DisplayChoice(
-                    title: "Menu bar",
-                    subtitle: "See a compact usage summary beside your other menu bar items.",
-                    symbol: "menubar.rectangle",
-                    isOn: $showsMenuBar
-                )
-                DisplayChoice(
-                    title: "Side notch",
-                    subtitle: "Keep a provider rail at the edge of your screen and expand it on hover.",
-                    symbol: "rectangle.portrait.lefthalf.filled",
-                    isOn: $showsNotch
-                )
-            }
-            Text("At least one surface must remain enabled.")
+            FlexSegmentedControl(
+                options: DisplaySurface.allCases,
+                title: { $0.title },
+                symbolName: { $0.systemImage },
+                selection: $displaySurface
+            )
+            .frame(maxWidth: .infinity, minHeight: 24)
+            Text("Choose Menu for the menu bar, Notch for the side notch, or Both to show both surfaces.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -259,7 +246,7 @@ struct OnboardingView: View {
 }
 
 private struct ProviderOnboardingRow: View {
-    let kind: ProviderKind
+    let id: ProviderID
     let isAvailable: Bool
     let isDetected: Bool
     let isChecking: Bool
@@ -271,10 +258,10 @@ private struct ProviderOnboardingRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ProviderLogo(provider: kind, size: 28)
+            ProviderLogo(provider: id.kind, size: 28)
                 .frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 3) {
-                Text(kind.rawValue).font(.headline)
+                Text(id.displayName).font(.headline)
                 if let accountLabel {
                     Text(accountDescription(for: accountLabel))
                         .font(.caption)
@@ -310,8 +297,8 @@ private struct ProviderOnboardingRow: View {
                     .disabled(!isDetected)
                     .help(
                         isDetected
-                            ? "Show \(kind.rawValue) in the notch"
-                            : "Connect \(kind.rawValue) before showing it in the notch"
+                            ? "Show \(id.displayName) in the notch"
+                            : "Connect \(id.displayName) before showing it in the notch"
                     )
             }
         }
@@ -320,45 +307,7 @@ private struct ProviderOnboardingRow: View {
     }
 
     private func accountDescription(for label: String) -> String {
-        kind == .openCodeGo ? "API key: \(label)" : "Account: \(label)"
-    }
-}
-
-private struct DisplayChoice: View {
-    let title: String
-    let subtitle: String
-    let symbol: String
-    @Binding var isOn: Bool
-
-    var body: some View {
-        Button { isOn.toggle() } label: {
-            HStack(spacing: 14) {
-                Image(systemName: symbol)
-                    .font(.title2)
-                    .frame(width: 34)
-                    .foregroundStyle(isOn ? Color.accentColor : .secondary)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.headline)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                }
-                Spacer()
-                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(isOn ? Color.accentColor : .secondary)
-            }
-            .padding(16)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(isOn ? Color.accentColor.opacity(0.14) : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(isOn ? Color.accentColor.opacity(0.6) : Color.clear, lineWidth: 1)
-        }
-        .cursor(.pointingHand)
+        id.kind == .openCodeGo ? "API key: \(label)" : "Account: \(label)"
     }
 }
 

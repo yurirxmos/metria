@@ -41,6 +41,11 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Uso dos assistentes de código com IA" } }
       }
     },
+    "Alert sound" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Som do alerta" } }
+      }
+    },
     "All usage windows for %@ are hidden. Enable one in Settings." : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Todas as janelas de uso do %@ estão ocultas. Ative uma em Configurações." } }
@@ -286,6 +291,11 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Barra de menus" } }
       }
     },
+    "Menu" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Menu" } }
+      }
+    },
     "Metria could not update its launch-at-login setting: %@" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Metria não conseguiu atualizar a configuração de início automático: %@" } }
@@ -346,6 +356,11 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aparência do notch" } }
       }
     },
+    "Notch" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Notch" } }
+      }
+    },
     "Ntfy server" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Servidor ntfy" } }
@@ -401,9 +416,19 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Fixar notch" } }
       }
     },
+    "Play sound" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Tocar som" } }
+      }
+    },
     "Position" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Posição" } }
+      }
+    },
+    "Preview sound" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Ouvir prévia do som" } }
       }
     },
     "Provider data is unavailable." : {
@@ -786,9 +811,9 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Estas cores de alerta se aplicam ao notch e à barra de menus. Escolha cada cor e quando ela começa a aparecer." } }
       }
     },
-    "Usage colors" : {
+    "Usage alerts" : {
       "localizations" : {
-        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Cores de uso" } }
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alertas de uso" } }
       }
     }
   },

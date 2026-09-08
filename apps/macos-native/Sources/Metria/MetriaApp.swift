@@ -152,7 +152,7 @@ extension Data {
             updatedAt: Date(),
             providers: providers.compactMap { usage in
                 guard let primary = usage.primary else { return nil }
-                return .init(name: usage.kind.rawValue, percent: primary.percent, resetDate: primary.resetDate,
+                return .init(name: usage.displayName, percent: primary.percent, resetDate: primary.resetDate,
                              usedCents: primary.usedCents, limitCents: primary.limitCents)
             }
         )
@@ -214,6 +214,47 @@ struct MenuBarAlertSettings {
         )
     }
 
+    /// The severity an alert is currently at for a given reading, shared by the color and
+    /// sound alerts so both fire at exactly the same crossing.
+    enum Level: Int, Comparable {
+        case none, caution, warning, critical
+
+        static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+
+    func level(for percent: Double) -> Level {
+        if percent >= Double(criticalThreshold) { return .critical }
+        if percent >= Double(warningThreshold) { return .warning }
+        if percent >= Double(cautionThreshold) { return .caution }
+        return .none
+    }
+}
+
+/// A macOS system sound (from `/System/Library/Sounds`) offered as a usage alert. Played by
+/// name so no audio file ships with the app — every option already lives on the Mac.
+enum AlertSound: String, CaseIterable, Identifiable {
+    case basso = "Basso"
+    case blow = "Blow"
+    case bottle = "Bottle"
+    case frog = "Frog"
+    case funk = "Funk"
+    case glass = "Glass"
+    case hero = "Hero"
+    case morse = "Morse"
+    case ping = "Ping"
+    case pop = "Pop"
+    case purr = "Purr"
+    case sosumi = "Sosumi"
+    case submarine = "Submarine"
+    case tink = "Tink"
+
+    static let `default` = Self.ping
+
+    var id: String { rawValue }
+
+    func play() {
+        NSSound(named: rawValue)?.play()
+    }
 }
 
 enum ProviderAppearance {
@@ -361,7 +402,7 @@ struct UsageCard: View {
         VStack(alignment: .leading, spacing: (isCompact ? 10 : 18) * scale) {
             HStack(spacing: (isCompact ? 6 : 10) * scale) {
                 ProviderLogo(provider: usage.kind, size: (isCompact ? 17 : 24) * scale)
-                Text(usage.kind.rawValue).font(
+                Text(usage.displayName).font(
                     .system(size: (isCompact ? 15 : 22) * scale, weight: .medium))
                 if showsAccount && showAccountEmails, let accountLabel = usage.accountLabel {
                     Text(accountLabel)
@@ -542,7 +583,7 @@ struct DashboardUsageCard: View {
         } label: {
             HStack(spacing: 8) {
                 ProviderLogo(provider: usage.kind, size: 20)
-                Text(usage.kind.rawValue)
+                Text(usage.displayName)
                 if showsAccount && showAccountEmails, let accountLabel = usage.accountLabel {
                     Text(accountLabel)
                         .font(.caption)
@@ -557,7 +598,7 @@ struct DashboardUsageCard: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                        .help("\(usage.kind.rawValue) plan")
+                        .help("\(usage.displayName) plan")
                 } else if usage.error == nil {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.caption)
@@ -607,7 +648,7 @@ struct PopoverContent: View {
                         ForEach(store.visibleProviders) {
                             DashboardUsageCard(
                                 usage: $0, showsAccount: true,
-                                hiddenWindowTitles: store.hiddenWindowTitlesByProvider[$0.kind]
+                                hiddenWindowTitles: store.hiddenWindowTitlesByProvider[$0.id]
                                     ?? [],
                                 alertSettings: alertSettings)
                         }
@@ -965,8 +1006,8 @@ struct NotchContent: View {
     @ObservedObject var mode: NotchMode
     let backgroundOpacity: Double
     let onNotchHover: (Bool) -> Void
-    let onProviderHover: (ProviderKind, Int, Bool) -> Void
-    let onProviderTap: (ProviderKind) -> Void
+    let onProviderHover: (ProviderID, Int, Bool) -> Void
+    let onProviderTap: (ProviderID) -> Void
     @State private var isHovered = false
     @State private var hasAppeared = false
     @State private var pendingHoverCollapse: DispatchWorkItem?
@@ -1166,12 +1207,12 @@ struct NotchContent: View {
             .frame(width: itemSize.width, height: itemSize.height)
             .frame(width: rowSize.width, height: rowSize.height)
             .contentShape(Rectangle())
-            .help(usage.kind.rawValue)
+            .help(usage.displayName)
             .onHover { isHovering in
-                onProviderHover(usage.kind, index, isHovering)
+                onProviderHover(usage.id, index, isHovering)
             }
             .onTapGesture {
-                onProviderTap(usage.kind)
+                onProviderTap(usage.id)
             }
         }
     }
@@ -1287,7 +1328,7 @@ struct NotchCardContent: View {
         // Keyed by provider so swapping the hovered provider while the card is already on
         // screen crossfades/scales between the two cards instead of hard-cutting the content,
         // matching the `withAnimation` the host applies when it reassigns `rootView`.
-        .id(usage.kind)
+        .id(usage.id)
         .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .center)))
     }
 
@@ -1731,7 +1772,7 @@ private struct SettingsLoadingView: View {
 /// A real `NSSegmentedControl` wrapper with `segmentDistribution = .fillEqually`, so the
 /// segments genuinely stretch to fill the row while keeping native press/hover states,
 /// keyboard navigation and accessibility — a pure-SwiftUI reimplementation can't match that.
-private struct FlexSegmentedControl<Option: Hashable>: NSViewRepresentable {
+struct FlexSegmentedControl<Option: Hashable>: NSViewRepresentable {
     let options: [Option]
     let title: (Option) -> String
     var symbolName: ((Option) -> String)? = nil
@@ -1783,16 +1824,45 @@ private struct FlexSegmentedControl<Option: Hashable>: NSViewRepresentable {
     }
 }
 
+enum DisplaySurface: String, CaseIterable, Identifiable {
+    case menu
+    case notch
+    case both
+
+    var id: Self { self }
+
+    init(showsNotch: Bool, showsMenuBar: Bool) {
+        self = showsNotch ? (showsMenuBar ? .both : .notch) : .menu
+    }
+
+    var showsNotch: Bool { self != .menu }
+    var showsMenuBar: Bool { self != .notch }
+
+    var systemImage: String {
+        switch self {
+        case .menu: "menubar.rectangle"
+        case .notch: "capsule"
+        case .both: "rectangle.on.rectangle"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .menu: String(localized: "Menu")
+        case .notch: String(localized: "Notch")
+        case .both: String(localized: "Both")
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var pairing: PairingManager
     @AppStorage("showAccountEmails") private var showAccountEmails = true
     @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
     @AppStorage(ProviderAppearance.themeKey) private var providerColorTheme = ProviderAppearance.theme.rawValue
-    @State private var showsNotch: Bool
-    let onToggleNotch: (Bool) -> Void
-    @State private var showsMenuBar: Bool
-    let onToggleMenuBar: (Bool) -> Void
+    @State private var displaySurface: DisplaySurface
+    let onSelectDisplaySurface: (DisplaySurface) -> Void
     let notchScreens: [NotchScreen]
     let notchScreenID: UInt32
     let onSelectNotchScreen: (UInt32) -> Void
@@ -1806,6 +1876,10 @@ struct SettingsView: View {
     let onChangeProviderAppearance: () -> Void
     @State private var menuBarAlertColorsEnabled: Bool
     let onChangeMenuBarAlertColors: (Bool) -> Void
+    @State private var menuBarAlertSoundEnabled: Bool
+    let onChangeMenuBarAlertSoundEnabled: (Bool) -> Void
+    @State private var menuBarAlertSoundName: String
+    let onChangeMenuBarAlertSoundName: (String) -> Void
     @AppStorage("showMenuBarProviderNames") private var showMenuBarProviderNames = true
     let onChangeMenuBarProviderNames: (Bool) -> Void
     @State private var cautionThreshold: Int
@@ -1842,15 +1916,14 @@ struct SettingsView: View {
     @State private var selectedLanguage: AppLanguage = AppLanguageManager.current
     @State private var isLanguageRestartPromptShown = false
     @State private var selectedSection: SettingsSection = .general
-    @State private var expandedProviderKinds: Set<ProviderKind> = []
+    @State private var expandedProviderIDs: Set<ProviderID> = []
 
     init(
         store: UsageStore,
         pairing: PairingManager,
         showsNotch: Bool,
-        onToggleNotch: @escaping (Bool) -> Void,
         showsMenuBar: Bool,
-        onToggleMenuBar: @escaping (Bool) -> Void,
+        onSelectDisplaySurface: @escaping (DisplaySurface) -> Void,
         notchScreens: [NotchScreen],
         notchScreenID: UInt32,
         onSelectNotchScreen: @escaping (UInt32) -> Void,
@@ -1864,6 +1937,10 @@ struct SettingsView: View {
         onChangeProviderAppearance: @escaping () -> Void,
         menuBarAlertColorsEnabled: Bool,
         onChangeMenuBarAlertColors: @escaping (Bool) -> Void,
+        menuBarAlertSoundEnabled: Bool,
+        onChangeMenuBarAlertSoundEnabled: @escaping (Bool) -> Void,
+        menuBarAlertSoundName: String,
+        onChangeMenuBarAlertSoundName: @escaping (String) -> Void,
         onChangeMenuBarProviderNames: @escaping (Bool) -> Void,
         menuBarAlertSettings: MenuBarAlertSettings,
         onChangeMenuBarAlertSettings: @escaping (MenuBarAlertSettings) -> Void,
@@ -1887,10 +1964,8 @@ struct SettingsView: View {
     ) {
         self.store = store
         self.pairing = pairing
-        _showsNotch = State(initialValue: showsNotch)
-        self.onToggleNotch = onToggleNotch
-        _showsMenuBar = State(initialValue: showsMenuBar)
-        self.onToggleMenuBar = onToggleMenuBar
+        _displaySurface = State(initialValue: DisplaySurface(showsNotch: showsNotch, showsMenuBar: showsMenuBar))
+        self.onSelectDisplaySurface = onSelectDisplaySurface
         self.notchScreens = notchScreens
         self.notchScreenID = notchScreenID
         self.onSelectNotchScreen = onSelectNotchScreen
@@ -1904,6 +1979,10 @@ struct SettingsView: View {
         self.onChangeProviderAppearance = onChangeProviderAppearance
         _menuBarAlertColorsEnabled = State(initialValue: menuBarAlertColorsEnabled)
         self.onChangeMenuBarAlertColors = onChangeMenuBarAlertColors
+        _menuBarAlertSoundEnabled = State(initialValue: menuBarAlertSoundEnabled)
+        self.onChangeMenuBarAlertSoundEnabled = onChangeMenuBarAlertSoundEnabled
+        _menuBarAlertSoundName = State(initialValue: menuBarAlertSoundName)
+        self.onChangeMenuBarAlertSoundName = onChangeMenuBarAlertSoundName
         self.onChangeMenuBarProviderNames = onChangeMenuBarProviderNames
         _cautionThreshold = State(initialValue: menuBarAlertSettings.cautionThreshold)
         _warningThreshold = State(initialValue: menuBarAlertSettings.warningThreshold)
@@ -2089,28 +2168,21 @@ struct SettingsView: View {
     private var designView: some View {
         Form {
             Section {
-                Toggle(
-                    "Show notch",
-                    isOn: Binding(
-                        get: { showsNotch },
-                        set: { newValue in
-                            showsNotch = newValue
-                            onToggleNotch(newValue)
-                        }
+                LabeledContent("Display") {
+                    FlexSegmentedControl(
+                        options: DisplaySurface.allCases,
+                        title: { $0.title },
+                        symbolName: { $0.systemImage },
+                        selection: Binding(
+                            get: { displaySurface },
+                            set: { newValue in
+                                displaySurface = newValue
+                                onSelectDisplaySurface(newValue)
+                            }
+                        )
                     )
-                )
-                .disabled(showsNotch && !showsMenuBar)
-                Toggle(
-                    "Show in menu bar",
-                    isOn: Binding(
-                        get: { showsMenuBar },
-                        set: { newValue in
-                            showsMenuBar = newValue
-                            onToggleMenuBar(newValue)
-                        }
-                    )
-                )
-                .disabled(showsMenuBar && !showsNotch)
+                    .frame(minHeight: 24)
+                }
                 Toggle("Show provider account email", isOn: $showAccountEmails)
                 Picker("Show usage as", selection: $spendDisplay) {
                     ForEach(SpendDisplay.allCases) { option in
@@ -2192,10 +2264,32 @@ struct SettingsView: View {
             Section {
                 Toggle("Color usage alerts", isOn: $menuBarAlertColorsEnabled)
                     .onChange(of: menuBarAlertColorsEnabled) { onChangeMenuBarAlertColors($0) }
+                HStack {
+                    Picker("Alert sound", selection: $menuBarAlertSoundName) {
+                        ForEach(AlertSound.allCases) { sound in
+                            Text(sound.rawValue).tag(sound.rawValue)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 130)
+                    .onChange(of: menuBarAlertSoundName) { onChangeMenuBarAlertSoundName($0) }
+                    .disabled(!menuBarAlertSoundEnabled)
+                    Button {
+                        AlertSound(rawValue: menuBarAlertSoundName)?.play()
+                    } label: {
+                        Image(systemName: "play.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Preview sound")
+                    .disabled(!menuBarAlertSoundEnabled)
+                    Spacer()
+                    Toggle("Play sound", isOn: $menuBarAlertSoundEnabled)
+                        .onChange(of: menuBarAlertSoundEnabled) { onChangeMenuBarAlertSoundEnabled($0) }
+                }
                 menuBarAlertControls
-                    .disabled(!menuBarAlertColorsEnabled)
+                    .disabled(!menuBarAlertColorsEnabled && !menuBarAlertSoundEnabled)
             } header: {
-                Label("Usage colors", systemImage: "paintpalette")
+                Label("Usage alerts", systemImage: "bell.badge")
             }
 
             Section {
@@ -2265,11 +2359,11 @@ struct SettingsView: View {
     /// A small colored status dot shown right after the provider name: green when connected
     /// (available and enabled), red when it isn't connected at all, orange-gray when available
     /// but turned off.
-    private func providerStatusDot(for kind: ProviderKind) -> some View {
+    private func providerStatusDot(for id: ProviderID) -> some View {
         let color: Color
-        if !store.isProviderAvailable(kind) {
+        if !store.isProviderAvailable(id) {
             color = .red
-        } else if store.enabledProviderKinds.contains(kind) {
+        } else if store.enabledProviderIDs.contains(id) {
             color = .green
         } else {
             color = .gray
@@ -2282,22 +2376,22 @@ struct SettingsView: View {
     /// The dismissable header row of a provider: logo, name, a short status right after the
     /// name, and the disclosure chevron pushed to the trailing edge. The entire row is a
     /// button so clicking anywhere on it toggles the provider's settings.
-    private func providerRowHeader(for kind: ProviderKind) -> some View {
+    private func providerRowHeader(for id: ProviderID) -> some View {
         Button {
             withAnimation(.easeOut(duration: 0.2)) {
-                if expandedProviderKinds.contains(kind) {
-                    expandedProviderKinds.remove(kind)
+                if expandedProviderIDs.contains(id) {
+                    expandedProviderIDs.remove(id)
                 } else {
-                    expandedProviderKinds.insert(kind)
+                    expandedProviderIDs.insert(id)
                 }
             }
         } label: {
             HStack(spacing: 12) {
-                ProviderLogo(provider: kind, size: 18)
-                Text(kind.rawValue)
-                providerStatusDot(for: kind)
+                ProviderLogo(provider: id.kind, size: 18)
+                Text(id.displayName)
+                providerStatusDot(for: id)
                 Spacer()
-                Image(systemName: expandedProviderKinds.contains(kind) ? "chevron.down" : "chevron.right")
+                Image(systemName: expandedProviderIDs.contains(id) ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -2312,34 +2406,35 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
-    private func providerDetail(for kind: ProviderKind) -> some View {
+    private func providerDetail(for id: ProviderID) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle(
                 "Use this provider",
                 isOn: Binding(
-                    get: { store.enabledProviderKinds.contains(kind) },
-                    set: { store.setProviderEnabled(kind, isEnabled: $0) }
+                    get: { store.enabledProviderIDs.contains(id) },
+                    set: { store.setProviderEnabled(id, isEnabled: $0) }
                 )
             )
-            .disabled(!store.isProviderAvailable(kind))
+            .disabled(!store.isProviderAvailable(id))
 
-            ForEach(store.usageWindowTitles(for: kind), id: \.self) { title in
+            ForEach(store.usageWindowTitles(for: id), id: \.self) { title in
                 Toggle(
                     "Show \"\(title)\"",
                     isOn: Binding(
                         get: {
-                            !(store.hiddenWindowTitlesByProvider[kind]?.contains(title) ?? false)
+                            !(store.hiddenWindowTitlesByProvider[id]?.contains(title) ?? false)
                         },
-                        set: { store.setWindowVisible(title, for: kind, isVisible: $0) }
+                        set: { store.setWindowVisible(title, for: id, isVisible: $0) }
                     ))
             }
 
             HStack {
                 Button("Diagnose") {
-                    diagnosticMessage = store.diagnosis(for: kind)
+                    diagnosticMessage = store.diagnosis(for: id)
                     isDiagnosticShown = true
                 }
                 Button("Reconnect") {
+                    let kind = id.kind
                     onReconnect(kind)
                     let providerName = kind.rawValue
                     let command = kind.reconnectCommand
@@ -2351,17 +2446,17 @@ struct SettingsView: View {
             }
             .controlSize(.small)
 
-            if let usage = store.providers.first(where: { $0.kind == kind }), let error = usage.error {
+            if let usage = store.providers.first(where: { $0.id == id }), let error = usage.error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                     .lineLimit(4)
             }
-            if let usage = store.providers.first(where: { $0.kind == kind }), let updatedAt = usage.updatedAt {
+            if let usage = store.providers.first(where: { $0.id == id }), let updatedAt = usage.updatedAt {
                 Text("Last update: \(updatedAt.formatted(.dateTime.hour().minute()))")
                     .foregroundStyle(.secondary)
             }
 
-            if !store.isProviderAvailable(kind), let hint = store.setupHint(for: kind) {
+            if !store.isProviderAvailable(id), let hint = store.setupHint(for: id) {
                 Text(hint).foregroundStyle(.secondary)
             }
         }
@@ -2387,8 +2482,8 @@ struct SettingsView: View {
                 Label("Mode", systemImage: "slider.horizontal.3")
             }
             Section {
-                ForEach(ProviderKind.allCases) { kind in
-                    providerRow(for: kind)
+                ForEach(store.registeredProviderIDs, id: \.self) { id in
+                    providerRow(for: id)
                 }
             } header: {
                 Label("Providers", systemImage: "square.stack.3d.up")
@@ -2411,11 +2506,11 @@ struct SettingsView: View {
 
     /// One provider's collapsible block inside the grouped form: the full-width header row
     /// plus, when expanded, its settings details.
-    private func providerRow(for kind: ProviderKind) -> some View {
+    private func providerRow(for id: ProviderID) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            providerRowHeader(for: kind)
-            if expandedProviderKinds.contains(kind) {
-                providerDetail(for: kind)
+            providerRowHeader(for: id)
+            if expandedProviderIDs.contains(id) {
+                providerDetail(for: id)
             }
         }
         .padding(.vertical, 6)
@@ -2566,10 +2661,11 @@ extension NSMenu {
         updater.checkForUpdatesInBackground()
         observation = store.$providers.sink { [weak self] providers in
             self?.updateStatusItem(providers)
+            self?.checkUsageAlertSound(providers)
             guard let self else { return }
             self.ntfyPublisher.publish(providers, secret: self.pairing.currentSecret)
         }
-        enabledProvidersObservation = store.$enabledProviderKinds.sink { [weak self] _ in
+        enabledProvidersObservation = store.$enabledProviderIDs.sink { [weak self] _ in
             guard let self else { return }
             self.updateStatusItem(self.store.providers)
         }
@@ -2619,6 +2715,45 @@ extension NSMenu {
     private var menuBarAlertColorsEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "menuBarAlertColorsEnabled") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "menuBarAlertColorsEnabled") }
+    }
+
+    private var menuBarAlertSoundEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "menuBarAlertSoundEnabled") as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: "menuBarAlertSoundEnabled") }
+    }
+
+    private var menuBarAlertSoundName: String {
+        get { UserDefaults.standard.string(forKey: "menuBarAlertSoundName") ?? AlertSound.default.rawValue }
+        set { UserDefaults.standard.set(newValue, forKey: "menuBarAlertSoundName") }
+    }
+
+    private func setMenuBarAlertSoundEnabled(_ enabled: Bool) {
+        menuBarAlertSoundEnabled = enabled
+    }
+
+    private func setMenuBarAlertSoundName(_ name: String) {
+        menuBarAlertSoundName = name
+    }
+
+    /// Plays the configured alert sound the moment any account's primary usage window
+    /// crosses upward into a new severity — never on every poll while it stays there, and
+    /// never for a severity a provider already sat at when Metria launched, since there is
+    /// no earlier reading yet to compare the first one against.
+    private func checkUsageAlertSound(_ providers: [ProviderUsage]) {
+        let settings = menuBarAlertSettings
+        var crossedUpward = false
+        for usage in providers {
+            guard let percent = usage.primary?.percent else { continue }
+            let level = settings.level(for: percent)
+            let previousLevel = lastAlertLevelByProvider[usage.id]
+            lastAlertLevelByProvider[usage.id] = level
+            if let previousLevel, level > previousLevel {
+                crossedUpward = true
+            }
+        }
+        guard crossedUpward, menuBarAlertSoundEnabled,
+              let sound = AlertSound(rawValue: menuBarAlertSoundName) else { return }
+        sound.play()
     }
 
     private var showMenuBarProviderNames: Bool {
@@ -2688,10 +2823,12 @@ extension NSMenu {
     private func menuBarAlertColor(for percent: Double) -> NSColor? {
         guard menuBarAlertColorsEnabled else { return nil }
         let settings = menuBarAlertSettings
-        if percent >= Double(settings.criticalThreshold) { return settings.criticalColor }
-        if percent >= Double(settings.warningThreshold) { return settings.warningColor }
-        if percent >= Double(settings.cautionThreshold) { return settings.cautionColor }
-        return nil
+        switch settings.level(for: percent) {
+        case .critical: return settings.criticalColor
+        case .warning: return settings.warningColor
+        case .caution: return settings.cautionColor
+        case .none: return nil
+        }
     }
 
     private var pwaBaseURL: String? {
@@ -2720,8 +2857,8 @@ extension NSMenu {
 
     private func updateStatusItem(_ providers: [ProviderUsage]) {
         let title = NSMutableAttributedString()
-        let usages = providers.sorted { $0.kind.rawValue < $1.kind.rawValue }.filter {
-            store.enabledProviderKinds.contains($0.kind)
+        let usages = providers.sorted { $0.id.rawValue < $1.id.rawValue }.filter {
+            store.enabledProviderIDs.contains($0.id)
         }
 
         for (index, usage) in usages.enumerated() {
@@ -2739,7 +2876,7 @@ extension NSMenu {
                 title.append(NSAttributedString(string: " "))
             }
             if showMenuBarProviderNames {
-                let name = usage.kind == .openCodeGo ? "Go" : usage.kind.rawValue
+                let name = usage.kind == .openCodeGo ? "Go" : usage.displayName
                 title.append(
                     NSAttributedString(
                         string: "\(name) ",
@@ -2779,16 +2916,7 @@ extension NSMenu {
         menu.addItem(
             withTitle: String(localized: "Open dashboard"), action: #selector(togglePopover), keyEquivalent: "",
             symbolName: "rectangle.dock")
-        let notchItem = menu.addItem(
-            withTitle: String(localized: "Show notch"), action: #selector(toggleNotchVisibility), keyEquivalent: "",
-            symbolName: "capsule")
-        notchItem.state = showsNotch ? .on : .off
-        notchItem.isEnabled = !(showsNotch && !showsMenuBar)
-        let menuBarItem = menu.addItem(
-            withTitle: String(localized: "Show in menu bar"), action: #selector(toggleMenuBarVisibility),
-            keyEquivalent: "", symbolName: "menubar.rectangle")
-        menuBarItem.state = showsMenuBar ? .on : .off
-        menuBarItem.isEnabled = !(showsMenuBar && !showsNotch)
+        addDisplaySurfaceMenu(to: menu)
         menu.addItem(.separator())
         menu.addItem(
             withTitle: String(localized: "Settings…"), action: #selector(openSettings), keyEquivalent: ",",
@@ -2825,16 +2953,7 @@ extension NSMenu {
         menu.addItem(
             withTitle: String(localized: "Open dashboard"), action: #selector(togglePopover), keyEquivalent: "",
             symbolName: "rectangle.dock")
-        let notchItem = menu.addItem(
-            withTitle: String(localized: "Show notch"), action: #selector(toggleNotchVisibility), keyEquivalent: "",
-            symbolName: "capsule")
-        notchItem.state = showsNotch ? .on : .off
-        notchItem.isEnabled = !(showsNotch && !showsMenuBar)
-        let menuBarItem = menu.addItem(
-            withTitle: String(localized: "Show in menu bar"), action: #selector(toggleMenuBarVisibility),
-            keyEquivalent: "", symbolName: "menubar.rectangle")
-        menuBarItem.state = showsMenuBar ? .on : .off
-        menuBarItem.isEnabled = !(showsMenuBar && !showsNotch)
+        addDisplaySurfaceMenu(to: menu)
 
         let positionItem = menu.addItem(withTitle: String(localized: "Position"), action: nil, keyEquivalent: "")
         positionItem.image = NSImage(
@@ -2920,10 +3039,14 @@ extension NSMenu {
     }
     private var sidebarWindows: [NSPanel] = []
     private var cardWindow: NSPanel?
-    private var activeCardProvider: ProviderKind?
+    private var activeCardProvider: ProviderID?
     private var activeCardIndex = 0
     private var activeCardScreen: NSScreen?
-    private var hoveredProvider: ProviderKind?
+    /// The alert severity each account was last seen at, so a sound only plays the moment a
+    /// reading crosses upward into a new severity — never on every poll it stays there, and
+    /// never for whatever severity a provider already sat at when Metria launched.
+    private var lastAlertLevelByProvider: [ProviderID: MenuBarAlertSettings.Level] = [:]
+    private var hoveredProvider: ProviderID?
     private var isRailHovered = false
     private var isCardHovered = false
     private var pendingCardDismiss: DispatchWorkItem?
@@ -3200,7 +3323,7 @@ extension NSMenu {
         }
     }
 
-    private func setProviderHovered(_ provider: ProviderKind, index: Int, isHovered: Bool) {
+    private func setProviderHovered(_ provider: ProviderID, index: Int, isHovered: Bool) {
         if isHovered {
             hoveredProvider = provider
             isRailHovered = true
@@ -3264,10 +3387,10 @@ extension NSMenu {
         DispatchQueue.main.async(execute: workItem)
     }
 
-    private func showCard(for provider: ProviderKind, index: Int) {
+    private func showCard(for provider: ProviderID, index: Int) {
         let usage =
-            store.providers.first(where: { $0.kind == provider })
-            ?? ProviderUsage(kind: provider, windows: [], updatedAt: nil, error: nil)
+            store.providers.first(where: { $0.id == provider })
+            ?? ProviderUsage(id: provider, windows: [], updatedAt: nil, error: nil)
         let isAlreadyVisible = cardWindow?.isVisible == true
 
         if cardWindow == nil {
@@ -3497,16 +3620,14 @@ extension NSMenu {
         UserDefaults.standard.removeObject(forKey: "displayMode")
     }
 
-    private func setShowsNotch(_ newValue: Bool) {
-        guard newValue || showsMenuBar else { return }
-        showsNotch = newValue
-        applyNotchVisibility()
-        statusItem.menu = buildAppMenu()
+    private var displaySurface: DisplaySurface {
+        DisplaySurface(showsNotch: showsNotch, showsMenuBar: showsMenuBar)
     }
 
-    private func setShowsMenuBar(_ newValue: Bool) {
-        guard newValue || showsNotch else { return }
-        showsMenuBar = newValue
+    private func setDisplaySurface(_ surface: DisplaySurface) {
+        showsNotch = surface.showsNotch
+        showsMenuBar = surface.showsMenuBar
+        applyNotchVisibility()
         applyMenuBarVisibility()
         statusItem.menu = buildAppMenu()
     }
@@ -3557,8 +3678,24 @@ extension NSMenu {
         }
     }
 
-    @objc private func toggleNotchVisibility() { setShowsNotch(!showsNotch) }
-    @objc private func toggleMenuBarVisibility() { setShowsMenuBar(!showsMenuBar) }
+    private func addDisplaySurfaceMenu(to menu: NSMenu) {
+        let item = menu.addItem(withTitle: String(localized: "Display"), action: nil, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: "rectangle.on.rectangle", accessibilityDescription: nil)
+        let submenu = NSMenu()
+        for surface in DisplaySurface.allCases {
+            let choice = submenu.addItem(withTitle: surface.title, action: #selector(selectDisplaySurfaceFromMenu(_:)), keyEquivalent: "")
+            choice.target = self
+            choice.representedObject = surface.rawValue
+            choice.state = displaySurface == surface ? .on : .off
+        }
+        item.submenu = submenu
+    }
+
+    @objc private func selectDisplaySurfaceFromMenu(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let surface = DisplaySurface(rawValue: rawValue) else { return }
+        setDisplaySurface(surface)
+    }
     @objc func quit() { NSApp.terminate(nil) }
 
     private func reconnectProvider(_ kind: ProviderKind) {
@@ -3625,8 +3762,7 @@ extension NSMenu {
                 store: store,
                 showsNotch: showsNotch,
                 showsMenuBar: showsMenuBar,
-                onToggleNotch: { [weak self] enabled in self?.setShowsNotch(enabled) },
-                onToggleMenuBar: { [weak self] enabled in self?.setShowsMenuBar(enabled) },
+                onSelectDisplaySurface: { [weak self] surface in self?.setDisplaySurface(surface) },
                 onReconnect: { [weak self] kind in self?.reconnectProvider(kind) },
                 onFinish: { [weak self] in self?.finishOnboarding() }
             )
@@ -3666,9 +3802,8 @@ extension NSMenu {
                 store: store,
                 pairing: pairing,
                 showsNotch: showsNotch,
-                onToggleNotch: { [weak self] enabled in self?.setShowsNotch(enabled) },
                 showsMenuBar: showsMenuBar,
-                onToggleMenuBar: { [weak self] enabled in self?.setShowsMenuBar(enabled) },
+                onSelectDisplaySurface: { [weak self] surface in self?.setDisplaySurface(surface) },
                 notchScreens: notchScreens,
                 notchScreenID: selectedNotchScreenID,
                 onSelectNotchScreen: { [weak self] id in self?.setNotchScreen(id) },
@@ -3683,6 +3818,14 @@ extension NSMenu {
                 menuBarAlertColorsEnabled: menuBarAlertColorsEnabled,
                  onChangeMenuBarAlertColors: { [weak self] enabled in
                      self?.setMenuBarAlertColorsEnabled(enabled)
+                 },
+                 menuBarAlertSoundEnabled: menuBarAlertSoundEnabled,
+                 onChangeMenuBarAlertSoundEnabled: { [weak self] enabled in
+                     self?.setMenuBarAlertSoundEnabled(enabled)
+                 },
+                 menuBarAlertSoundName: menuBarAlertSoundName,
+                 onChangeMenuBarAlertSoundName: { [weak self] name in
+                     self?.setMenuBarAlertSoundName(name)
                  },
                  onChangeMenuBarProviderNames: { [weak self] enabled in
                      self?.setShowMenuBarProviderNames(enabled)

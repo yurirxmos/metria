@@ -88,7 +88,74 @@ public enum ProviderKind: String, CaseIterable, Identifiable, Hashable {
     case cursor = "Cursor"
     case antigravity = "Antigravity"
 
+    /// The single-account providers the app has always shipped. Used so that a fresh
+    /// install's first run only auto-enables what already existed before the
+    /// multi-account `knownProviderIDs` migration key was introduced.
+    public static let legacyKinds: Set<ProviderKind> = [.claude, .codex, .openCodeGo]
+
     public var id: String { rawValue }
+
+    /// The `ProviderKind` an account-scoped raw value belongs to. A multi-account provider
+    /// ids itself as `"<Kind>-<slug>"` (e.g. `"Claude-work"`), so a kind is recovered by
+    /// stripping that suffix; an exact match means a single-account provider.
+    public init(parsingRawValue rawValue: String) {
+        if let exact = ProviderKind(rawValue: rawValue) {
+            self = exact
+            return
+        }
+        for kind in ProviderKind.allCases where rawValue.hasPrefix(kind.rawValue + "-") {
+            self = kind
+            return
+        }
+        self = .claude
+    }
+}
+
+/// The identity of one provider reading, which for a multi-account provider (Claude) is a
+/// single account rather than the provider as a whole.
+///
+/// `rawValue` doubles as the persisted key so existing single-account installs load
+/// unchanged: every single-account provider's raw value equals its `ProviderKind.rawValue`
+/// exactly as the older `ProviderKind` keyed store wrote it.
+public struct ProviderID: Equatable, Hashable, Identifiable, Codable {
+    public let kind: ProviderKind
+    /// Nil for single-account providers and for the default Claude profile; the part after
+    /// `Claude-` otherwise (e.g. `work`). Kept so a profile's sessions land in its own ring.
+    public let slug: String?
+
+    public var rawValue: String { slug.map { "\(kind.rawValue)-\($0)" } ?? kind.rawValue }
+    public var id: String { rawValue }
+    /// `Claude`, `Claude (work)`, `Codex`, … — the name shown in a card, the notch tooltip
+    /// and a Settings row, so a profile is told apart from its siblings without guessing.
+    public var displayName: String { slug.map { "\(kind.rawValue) (\($0))" } ?? kind.rawValue }
+    /// Whether this id names the default profile of a provider (no slug) — the common case
+    /// for every provider.
+    public var isDefaultAccount: Bool { slug == nil }
+
+    public init(kind: ProviderKind, slug: String? = nil) {
+        self.kind = kind
+        self.slug = (slug?.isEmpty == true ? nil : slug)
+    }
+
+    public init(rawValue: String) {
+        let parsedKind = ProviderKind(parsingRawValue: rawValue)
+        self.kind = parsedKind
+        if ProviderKind(rawValue: rawValue) == nil {
+            self.slug = String(rawValue.dropFirst(parsedKind.rawValue.count + 1))
+        } else {
+            self.slug = nil
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self.init(rawValue: try container.decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum AIToolsConfiguration: String, CaseIterable, Identifiable {
@@ -108,7 +175,14 @@ public enum AIToolsConfiguration: String, CaseIterable, Identifiable {
 }
 
 public struct ProviderUsage: Identifiable, Equatable {
-    public let kind: ProviderKind
+    /// Which provider account these windows belong to — the key every reading is keyed by.
+    public let id: ProviderID
+    /// The provider family, for presentation (logo, accent colour, window titles) which is
+    /// shared across that provider's accounts.
+    public var kind: ProviderKind { id.kind }
+    /// The name to draw in a card or row for this account (e.g. `Claude (work)`).
+    public var displayName: String { id.displayName }
+    /// The account's signed-in address, when the credential carries one.
     public let accountLabel: String?
     /// The account's subscription tier (e.g. "Max", "Pro", "Plus"), shown in place of the
     /// generic "Connected" badge when a provider can resolve it.
@@ -117,31 +191,50 @@ public struct ProviderUsage: Identifiable, Equatable {
     public var updatedAt: Date?
     public var error: String?
 
-    public var id: ProviderKind { kind }
     public var primary: UsageWindow? { windows.first }
 
-    public init(kind: ProviderKind, accountLabel: String? = nil, planLabel: String? = nil, windows: [UsageWindow], updatedAt: Date?, error: String?) {
-        self.kind = kind
+    /// Account-scoped initializer, used by a multi-account provider (Claude).
+    public init(id: ProviderID, accountLabel: String? = nil, planLabel: String? = nil, windows: [UsageWindow], updatedAt: Date?, error: String?) {
+        self.id = id
         self.accountLabel = accountLabel
         self.planLabel = planLabel
         self.windows = windows
         self.updatedAt = updatedAt
         self.error = error
     }
+
+    /// Single-account convenience initializer, used by every provider that has one account.
+    public init(kind: ProviderKind, accountLabel: String? = nil, planLabel: String? = nil, windows: [UsageWindow], updatedAt: Date?, error: String?) {
+        self.init(id: ProviderID(kind: kind), accountLabel: accountLabel, planLabel: planLabel, windows: windows, updatedAt: updatedAt, error: error)
+    }
 }
 
 public enum ProviderFetchResult: Equatable {
     case loaded(ProviderUsage)
     case empty(ProviderUsage)
-    case failed(ProviderKind, String, retryAfter: TimeInterval?)
+    case failed(ProviderID, String, retryAfter: TimeInterval?)
+
+    /// Producer-friendly overloads so a provider can report a failure with a bare kind for
+    /// its single default account. The account-scoped case (`failed(ProviderID, …)`) is the
+    /// case itself.
+    public static func failed(_ kind: ProviderKind, _ message: String, retryAfter: TimeInterval? = nil) -> ProviderFetchResult {
+        .failed(ProviderID(kind: kind), message, retryAfter: retryAfter)
+    }
 }
 
 public protocol UsageProvider {
     var kind: ProviderKind { get }
+    /// The account-scoped identity of this reading. Defaults to the provider as a whole;
+    /// a multi-account provider overrides it per account.
+    var id: ProviderID { get }
     var isAvailable: Bool { get }
     var setupHint: String { get }
     var usageWindowTitles: [String] { get }
     func fetch() async -> ProviderFetchResult
+}
+
+public extension UsageProvider {
+    var id: ProviderID { ProviderID(kind: kind) }
 }
 
 @MainActor
@@ -153,21 +246,24 @@ public final class UsageStore: ObservableObject {
             rescheduleTimer()
         }
     }
-    @Published public private(set) var enabledProviderKinds: Set<ProviderKind>
-    @Published public private(set) var hiddenWindowTitlesByProvider: [ProviderKind: Set<String>] = [:]
+    @Published public private(set) var enabledProviderIDs: Set<ProviderID>
+    @Published public private(set) var hiddenWindowTitlesByProvider: [ProviderID: Set<String>] = [:]
     @Published public private(set) var aiToolsConfiguration: AIToolsConfiguration
-    /// The providers to display, in `ProviderKind` order, backfilled with an empty
-    /// placeholder for any enabled provider that hasn't reported usage yet. Computed once
+    /// The providers to display, in stable registration order, backfilled with an empty
+    /// placeholder for any enabled account that hasn't reported usage yet. Computed once
     /// per underlying change instead of by every view that needs it on every render.
     @Published public private(set) var visibleProviders: [ProviderUsage] = []
 
     private let sources: [any UsageProvider]
-    private let availableProviderKinds: Set<ProviderKind>
+    /// Every account a source can read, in registration order — the order Settings and the
+    /// onboarding draw their rows in.
+    public let registeredProviderIDs: [ProviderID]
+    private let availableProviderIDs: Set<ProviderID>
     private let defaults: UserDefaults
     private var refreshOperation: Task<Void, Never>?
     private var scheduleTask: Task<Void, Never>?
-    private var retryTasks: [ProviderKind: Task<Void, Never>] = [:]
-    private var retryUntilByProvider: [ProviderKind: Date]
+    private var retryTasks: [ProviderID: Task<Void, Never>] = [:]
+    private var retryUntilByProvider: [ProviderID: Date]
     private var isRefreshing = false
     private let enabledProvidersKey = "enabledProviderKinds"
     private let hiddenWindowTitlesKey = "hiddenUsageWindowTitles"
@@ -192,38 +288,43 @@ public final class UsageStore: ObservableObject {
     /// key was introduced. Existing installs treat these as already known so
     /// that only genuinely new kinds (added after this point) get
     /// auto-enabled; see `Providers auto-enablement migration` below.
-    private static let legacyProviderKinds: Set<ProviderKind> = [.claude, .codex, .openCodeGo]
+    private static let legacyProviderKinds: Set<ProviderKind> = ProviderKind.legacyKinds
 
     public init(providers: [any UsageProvider], defaults: UserDefaults = .standard) {
         self.sources = providers
         self.defaults = defaults
+        self.registeredProviderIDs = providers.map(\.id)
+        let availableIDs = Set(providers.filter(\.isAvailable).map(\.id))
+        availableProviderIDs = availableIDs
+
         // `nil` (key never written) means "never configured — use the minimal preset". An
         // empty array is a real, intentional choice (the user disabled every provider) and
         // must not be re-interpreted as "unconfigured" on the next launch, or a fully-disabled
         // setup would silently re-enable itself.
         let hasSavedKinds = defaults.object(forKey: enabledProvidersKey) != nil
-        let savedKinds = (defaults.array(forKey: enabledProvidersKey) as? [String] ?? [])
-            .compactMap(ProviderKind.init(rawValue:))
-        let availableKinds = Set(providers.filter(\.isAvailable).map(\.kind))
-        availableProviderKinds = availableKinds
-        let knownKinds = (defaults.array(forKey: knownProvidersKey) as? [String])
-            .map { Set($0.compactMap(ProviderKind.init(rawValue:))) } ?? Self.legacyProviderKinds
-        let newlyAvailableKinds = availableKinds.subtracting(knownKinds)
-        let initialEnabledProviderKinds = hasSavedKinds ? Set(savedKinds).union(newlyAvailableKinds) : availableKinds
-        enabledProviderKinds = initialEnabledProviderKinds
-        defaults.set(knownKinds.union(availableKinds).map(\.rawValue), forKey: knownProvidersKey)
-        if hasSavedKinds, !newlyAvailableKinds.isEmpty {
-            defaults.set((Set(savedKinds).union(newlyAvailableKinds)).map(\.rawValue), forKey: enabledProvidersKey)
+        let savedIDs = (defaults.array(forKey: enabledProvidersKey) as? [String] ?? [])
+            .map(ProviderID.init(rawValue:))
+        let knownIDs = (defaults.array(forKey: knownProvidersKey) as? [String])
+            .map { Set($0.map(ProviderID.init(rawValue:))) }
+            ?? Set(Self.legacyProviderKinds.map { ProviderID(kind: $0) })
+        let newlyAvailableIDs = availableIDs.subtracting(knownIDs)
+        let initialEnabledProviderIDs = hasSavedKinds ? Set(savedIDs).union(newlyAvailableIDs) : availableIDs
+        enabledProviderIDs = initialEnabledProviderIDs
+        defaults.set(knownIDs.union(availableIDs).map(\.rawValue), forKey: knownProvidersKey)
+        if hasSavedKinds, !newlyAvailableIDs.isEmpty {
+            defaults.set((Set(savedIDs).union(newlyAvailableIDs)).map(\.rawValue), forKey: enabledProvidersKey)
         }
         self.retryUntilByProvider = Self.loadRetryDates(from: defaults, key: retryUntilKey)
-            .filter { availableKinds.contains($0.key) && $0.value > Date() }
+            .filter { availableIDs.contains($0.key) && $0.value > Date() }
         let cachedProviders = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
-            .filter { availableKinds.contains($0.kind) && initialEnabledProviderKinds.contains($0.kind) }
+            .filter { availableIDs.contains($0.id) && initialEnabledProviderIDs.contains($0.id) }
         self.providers = cachedProviders
         let savedHidden = (defaults.dictionary(forKey: hiddenWindowTitlesKey) as? [String: [String]]) ?? [:]
-        var initialHiddenWindowTitles = savedHidden.reduce(into: [ProviderKind: Set<String>]()) { result, entry in
-            guard let kind = ProviderKind(rawValue: entry.key) else { return }
-            result[kind] = Set(entry.value)
+        let orderedRegisteredIDs = registeredProviderIDs
+        var initialHiddenWindowTitles = savedHidden.reduce(into: [ProviderID: Set<String>]()) { result, entry in
+            let id = ProviderID(rawValue: entry.key)
+            guard orderedRegisteredIDs.contains(id) else { return }
+            result[id] = Set(entry.value)
         }
         let initialConfiguration: AIToolsConfiguration
         if let savedConfiguration = defaults.string(forKey: aiToolsConfigurationKey)
@@ -232,17 +333,17 @@ public final class UsageStore: ObservableObject {
             initialConfiguration = savedConfiguration
         } else if !hasSavedKinds {
             initialConfiguration = .minimal
-            for provider in providers where availableKinds.contains(provider.kind) {
+            for provider in providers where availableIDs.contains(provider.id) {
                 var titlesToHide = Set(provider.usageWindowTitles.dropFirst())
-                if let cachedWindows = cachedProviders.first(where: { $0.kind == provider.kind })?.windows {
+                if let cachedWindows = cachedProviders.first(where: { $0.id == provider.id })?.windows {
                     titlesToHide.formUnion(cachedWindows.dropFirst().map(\.title))
                 }
                 if !titlesToHide.isEmpty {
-                    initialHiddenWindowTitles[provider.kind] = titlesToHide
+                    initialHiddenWindowTitles[provider.id] = titlesToHide
                 }
             }
         } else {
-            let isDefault = initialEnabledProviderKinds == availableKinds && initialHiddenWindowTitles.isEmpty
+            let isDefault = initialEnabledProviderIDs == availableIDs && initialHiddenWindowTitles.isEmpty
             initialConfiguration = isDefault ? .default : .custom
         }
         hiddenWindowTitlesByProvider = initialHiddenWindowTitles
@@ -258,35 +359,39 @@ public final class UsageStore: ObservableObject {
     }
 
     private func updateVisibleProviders() {
-        visibleProviders = ProviderKind.allCases
-            .compactMap { kind in
-                guard enabledProviderKinds.contains(kind),
-                    availableProviderKinds.contains(kind),
-                    let usage = providers.first(where: { $0.kind == kind })
-                else { return nil }
-                return usage
-            }
+        visibleProviders = registeredProviderIDs.compactMap { id in
+            guard enabledProviderIDs.contains(id),
+                availableProviderIDs.contains(id),
+                let usage = providers.first(where: { $0.id == id })
+            else { return nil }
+            return usage
+        }
     }
 
-    public func isProviderAvailable(_ kind: ProviderKind) -> Bool {
-        sources.first(where: { $0.kind == kind })?.isAvailable ?? false
+    /// Every provider account the app can read, in Settings/onboarding order.
+    public var availableProviderIDsArray: [ProviderID] {
+        registeredProviderIDs.filter(availableProviderIDs.contains)
     }
 
-    public func setupHint(for kind: ProviderKind) -> String? {
-        sources.first(where: { $0.kind == kind })?.setupHint
+    public func isProviderAvailable(_ id: ProviderID) -> Bool {
+        sources.first(where: { $0.id == id })?.isAvailable ?? false
     }
 
-    public func usageWindowTitles(for kind: ProviderKind) -> [String] {
-        sources.first(where: { $0.kind == kind })?.usageWindowTitles ?? []
+    public func setupHint(for id: ProviderID) -> String? {
+        sources.first(where: { $0.id == id })?.setupHint
     }
 
-    public func diagnosis(for kind: ProviderKind) -> String {
-        guard let source = sources.first(where: { $0.kind == kind }) else {
+    public func usageWindowTitles(for id: ProviderID) -> [String] {
+        sources.first(where: { $0.id == id })?.usageWindowTitles ?? []
+    }
+
+    public func diagnosis(for id: ProviderID) -> String {
+        guard let source = sources.first(where: { $0.id == id }) else {
             return String(localized: "This provider is not registered in Metria.")
         }
 
         var details = [source.isAvailable ? String(localized: "Local credentials or usage files were detected.") : source.setupHint]
-        if let usage = providers.first(where: { $0.kind == kind }) {
+        if let usage = providers.first(where: { $0.id == id }) {
             if usage.windows.isEmpty {
                 details.append(String(localized: "No usage windows are available yet."))
             } else {
@@ -306,44 +411,44 @@ public final class UsageStore: ObservableObject {
         return details.joined(separator: "\n")
     }
 
-    public func setProviderEnabled(_ kind: ProviderKind, isEnabled: Bool) {
-        var updatedKinds = enabledProviderKinds
+    public func setProviderEnabled(_ id: ProviderID, isEnabled: Bool) {
+        var updatedIDs = enabledProviderIDs
         if isEnabled {
-            updatedKinds.insert(kind)
+            updatedIDs.insert(id)
         } else {
-            updatedKinds.remove(kind)
-            retryTasks[kind]?.cancel()
-            retryTasks[kind] = nil
-            retryUntilByProvider[kind] = nil
+            updatedIDs.remove(id)
+            retryTasks[id]?.cancel()
+            retryTasks[id] = nil
+            retryUntilByProvider[id] = nil
             saveRetryDates()
         }
-        guard updatedKinds != enabledProviderKinds else { return }
-        enabledProviderKinds = updatedKinds
-        if isEnabled, providers.allSatisfy({ $0.kind != kind }) {
-            providers.append(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil))
+        guard updatedIDs != enabledProviderIDs else { return }
+        enabledProviderIDs = updatedIDs
+        if isEnabled, providers.allSatisfy({ $0.id != id }) {
+            providers.append(ProviderUsage(id: id, windows: [], updatedAt: nil, error: nil))
         }
         markConfigurationAsCustom()
-        defaults.set(updatedKinds.map(\.rawValue), forKey: enabledProvidersKey)
+        defaults.set(updatedIDs.map(\.rawValue), forKey: enabledProvidersKey)
         updateVisibleProviders()
         refresh()
     }
 
     /// Controls whether a specific usage window (e.g. "Current session") shows up in the
-    /// card, independent of `enabledProviderKinds` (which toggles a whole provider). Never
-    /// lets the last visible window of a provider be hidden, so the card always has
+    /// card, independent of `enabledProviderIDs` (which toggles a whole account). Never
+    /// lets the last visible window of an account be hidden, so the card always has
     /// something to show.
-    public func setWindowVisible(_ title: String, for kind: ProviderKind, isVisible: Bool) {
-        var hiddenForKind = hiddenWindowTitlesByProvider[kind] ?? []
+    public func setWindowVisible(_ title: String, for id: ProviderID, isVisible: Bool) {
+        var hiddenForID = hiddenWindowTitlesByProvider[id] ?? []
         if isVisible {
-            hiddenForKind.remove(title)
+            hiddenForID.remove(title)
         } else {
-            let knownTitles = usageWindowTitles(for: kind)
-            let visibleCount = knownTitles.filter { !hiddenForKind.contains($0) }.count
+            let knownTitles = usageWindowTitles(for: id)
+            let visibleCount = knownTitles.filter { !hiddenForID.contains($0) }.count
             guard visibleCount > 1 else { return }
-            hiddenForKind.insert(title)
+            hiddenForID.insert(title)
         }
-        guard hiddenForKind != (hiddenWindowTitlesByProvider[kind] ?? []) else { return }
-        hiddenWindowTitlesByProvider[kind] = hiddenForKind
+        guard hiddenForID != (hiddenWindowTitlesByProvider[id] ?? []) else { return }
+        hiddenWindowTitlesByProvider[id] = hiddenForID
         let serializable = hiddenWindowTitlesByProvider.reduce(into: [String: [String]]()) { result, entry in
             result[entry.key.rawValue] = Array(entry.value)
         }
@@ -354,27 +459,27 @@ public final class UsageStore: ObservableObject {
     public func setAIToolsConfiguration(_ configuration: AIToolsConfiguration) {
         guard configuration != .custom else { return }
 
-        let enabledKinds = availableProviderKinds
-        var hiddenTitles: [ProviderKind: Set<String>] = [:]
+        let enabledIDs = availableProviderIDs
+        var hiddenTitles: [ProviderID: Set<String>] = [:]
         if configuration == .minimal {
-            for kind in enabledKinds {
-                let titles = usageWindowTitles(for: kind)
+            for id in registeredProviderIDs where enabledIDs.contains(id) {
+                let titles = usageWindowTitles(for: id)
                 var titlesToHide = Set(titles.dropFirst())
                 // Cached windows can carry titles localized by a previous app language.
                 // Include those exact titles so stale rate-limited data follows the preset too.
-                if let cachedWindows = providers.first(where: { $0.kind == kind })?.windows {
+                if let cachedWindows = providers.first(where: { $0.id == id })?.windows {
                     titlesToHide.formUnion(cachedWindows.dropFirst().map(\.title))
                 }
                 if !titlesToHide.isEmpty {
-                    hiddenTitles[kind] = titlesToHide
+                    hiddenTitles[id] = titlesToHide
                 }
             }
         }
 
-        enabledProviderKinds = enabledKinds
+        enabledProviderIDs = enabledIDs
         hiddenWindowTitlesByProvider = hiddenTitles
         aiToolsConfiguration = configuration
-        defaults.set(enabledKinds.map(\.rawValue), forKey: enabledProvidersKey)
+        defaults.set(enabledIDs.map(\.rawValue), forKey: enabledProvidersKey)
         let serializable = hiddenTitles.reduce(into: [String: [String]]()) { result, entry in
             result[entry.key.rawValue] = Array(entry.value)
         }
@@ -397,12 +502,12 @@ public final class UsageStore: ObservableObject {
     }
 
     private func restoreRetryTasks() {
-        let expiredKinds = retryUntilByProvider.compactMap { kind, deadline in
-            enabledProviderKinds.contains(kind) && deadline > Date() ? nil : kind
+        let expiredIDs = retryUntilByProvider.compactMap { id, deadline in
+            enabledProviderIDs.contains(id) && deadline > Date() ? nil : id
         }
-        expiredKinds.forEach { retryUntilByProvider[$0] = nil }
-        for (kind, deadline) in retryUntilByProvider {
-            scheduleRetry(for: kind, until: deadline)
+        expiredIDs.forEach { retryUntilByProvider[$0] = nil }
+        for (id, deadline) in retryUntilByProvider {
+            scheduleRetry(for: id, until: deadline)
         }
         saveRetryDates()
     }
@@ -429,17 +534,17 @@ public final class UsageStore: ObservableObject {
     private func refresh(onlyStale: Bool) {
         let now = Date()
         let providers = sources.filter {
-            enabledProviderKinds.contains($0.kind) &&
+            enabledProviderIDs.contains($0.id) &&
             $0.isAvailable &&
-            retryTasks[$0.kind] == nil &&
-            (retryUntilByProvider[$0.kind] ?? .distantPast) <= now &&
-            (!onlyStale || isProviderStale($0.kind, now: now))
+            retryTasks[$0.id] == nil &&
+            (retryUntilByProvider[$0.id] ?? .distantPast) <= now &&
+            (!onlyStale || isProviderStale($0.id, now: now))
         }
         refresh(providers: providers)
     }
 
-    private func isProviderStale(_ kind: ProviderKind, now: Date) -> Bool {
-        guard let updatedAt = providers.first(where: { $0.kind == kind })?.updatedAt else { return true }
+    private func isProviderStale(_ id: ProviderID, now: Date) -> Bool {
+        guard let updatedAt = providers.first(where: { $0.id == id })?.updatedAt else { return true }
         return now.timeIntervalSince(updatedAt) >= refreshInterval
     }
 
@@ -469,15 +574,15 @@ public final class UsageStore: ObservableObject {
     }
 
     private func apply(_ result: ProviderFetchResult) {
-        let kind: ProviderKind
+        let id: ProviderID
         switch result {
-        case .loaded(let usage), .empty(let usage): kind = usage.kind
-        case .failed(let failedKind, _, _): kind = failedKind
+        case .loaded(let usage), .empty(let usage): id = usage.id
+        case .failed(let failedID, _, _): id = failedID
         }
-        guard enabledProviderKinds.contains(kind) else {
-            retryTasks[kind]?.cancel()
-            retryTasks[kind] = nil
-            retryUntilByProvider[kind] = nil
+        guard enabledProviderIDs.contains(id) else {
+            retryTasks[id]?.cancel()
+            retryTasks[id] = nil
+            retryUntilByProvider[id] = nil
             saveRetryDates()
             return
         }
@@ -485,62 +590,62 @@ public final class UsageStore: ObservableObject {
         switch result {
         case .loaded(let usage):
             replace(usage)
-            retryUntilByProvider[usage.kind] = nil
+            retryUntilByProvider[usage.id] = nil
             saveRetryDates()
             if !usage.windows.isEmpty {
                 saveCachedUsage()
             }
             if usage.error == nil {
-                retryTasks[usage.kind]?.cancel()
-                retryTasks[usage.kind] = nil
+                retryTasks[usage.id]?.cancel()
+                retryTasks[usage.id] = nil
             }
         case .empty(let usage):
-            if let index = providers.firstIndex(where: { $0.kind == usage.kind }), !providers[index].windows.isEmpty {
+            if let index = providers.firstIndex(where: { $0.id == usage.id }), !providers[index].windows.isEmpty {
                 providers[index].error = usage.error ?? String(localized: "No current usage data was returned. Showing the last successful update.")
             } else {
                 replace(usage)
             }
-            retryTasks[usage.kind]?.cancel()
-            retryTasks[usage.kind] = nil
-        case .failed(let kind, let message, let retryAfter):
+            retryTasks[usage.id]?.cancel()
+            retryTasks[usage.id] = nil
+        case .failed(let failedID, let message, let retryAfter):
             let displayMessage = retryAfter.map { delay in
                 let retryDescription = Self.retryDescription(delay)
                 return String(localized: "\(message) Retrying in \(retryDescription).")
             } ?? message
-            if let index = providers.firstIndex(where: { $0.kind == kind }) {
+            if let index = providers.firstIndex(where: { $0.id == failedID }) {
                 providers[index].error = displayMessage
             } else {
-                providers.append(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: displayMessage))
+                providers.append(ProviderUsage(id: failedID, windows: [], updatedAt: nil, error: displayMessage))
             }
-            scheduleRetry(for: kind, after: retryAfter)
+            scheduleRetry(for: failedID, after: retryAfter)
         }
-        providers.sort { $0.kind.rawValue < $1.kind.rawValue }
+        providers.sort { $0.id.rawValue < $1.id.rawValue }
     }
 
     private func replace(_ usage: ProviderUsage) {
-        if let index = providers.firstIndex(where: { $0.kind == usage.kind }) {
+        if let index = providers.firstIndex(where: { $0.id == usage.id }) {
             providers[index] = usage
         } else {
             providers.append(usage)
         }
     }
 
-    private func scheduleRetry(for kind: ProviderKind, after delay: TimeInterval?) {
-        guard let delay, delay > 0, retryTasks[kind] == nil else { return }
-        scheduleRetry(for: kind, until: Date().addingTimeInterval(delay))
+    private func scheduleRetry(for id: ProviderID, after delay: TimeInterval?) {
+        guard let delay, delay > 0, retryTasks[id] == nil else { return }
+        scheduleRetry(for: id, until: Date().addingTimeInterval(delay))
     }
 
-    private func scheduleRetry(for kind: ProviderKind, until deadline: Date) {
-        guard deadline > Date(), retryTasks[kind] == nil,
-              let provider = sources.first(where: { $0.kind == kind }) else { return }
-        retryUntilByProvider[kind] = deadline
+    private func scheduleRetry(for id: ProviderID, until deadline: Date) {
+        guard deadline > Date(), retryTasks[id] == nil,
+              let provider = sources.first(where: { $0.id == id }) else { return }
+        retryUntilByProvider[id] = deadline
         saveRetryDates()
         let delay = max(0, deadline.timeIntervalSinceNow)
-        retryTasks[kind] = Task { [weak self] in
+        retryTasks[id] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let self else { return }
-            self.retryTasks[kind] = nil
-            guard self.enabledProviderKinds.contains(kind) else { return }
+            self.retryTasks[id] = nil
+            guard self.enabledProviderIDs.contains(id) else { return }
             self.refresh(providers: [provider])
         }
     }
@@ -553,19 +658,18 @@ public final class UsageStore: ObservableObject {
         defaults.set(data, forKey: retryUntilKey)
     }
 
-    private static func loadRetryDates(from defaults: UserDefaults, key: String) -> [ProviderKind: Date] {
+    private static func loadRetryDates(from defaults: UserDefaults, key: String) -> [ProviderID: Date] {
         guard let data = defaults.data(forKey: key),
               let dates = try? JSONDecoder().decode([String: Date].self, from: data) else { return [:] }
-        return dates.reduce(into: [ProviderKind: Date]()) { result, entry in
-            guard let kind = ProviderKind(rawValue: entry.key) else { return }
-            result[kind] = entry.value
+        return dates.reduce(into: [ProviderID: Date]()) { result, entry in
+            result[ProviderID(rawValue: entry.key)] = entry.value
         }
     }
 
     private func saveCachedUsage() {
         let cached = providers.filter { !$0.windows.isEmpty }.map { usage in
             CachedUsage(
-                kind: usage.kind.rawValue,
+                kind: usage.id.rawValue,
                 windows: usage.windows.map { .init(title: $0.title, percent: $0.percent, resetDate: $0.resetDate) },
                 updatedAt: usage.updatedAt
             )
@@ -578,9 +682,8 @@ public final class UsageStore: ObservableObject {
         guard let data = defaults.data(forKey: key),
               let cached = try? JSONDecoder().decode([CachedUsage].self, from: data) else { return [] }
         return cached.compactMap { item in
-            guard let kind = ProviderKind(rawValue: item.kind) else { return nil }
-            return ProviderUsage(
-                kind: kind,
+            ProviderUsage(
+                id: ProviderID(rawValue: item.kind),
                 windows: item.windows.map { UsageWindow(title: $0.title, percent: $0.percent, resetDate: $0.resetDate) },
                 updatedAt: item.updatedAt,
                 error: nil
