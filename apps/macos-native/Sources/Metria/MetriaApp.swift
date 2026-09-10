@@ -631,6 +631,7 @@ struct PopoverContent: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
+                .disabled(!store.canRefresh)
             }
 
             ScrollView {
@@ -2450,6 +2451,10 @@ struct SettingsView: View {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                     .lineLimit(4)
+            }
+            if let retryDate = store.retryDate(for: id) {
+                Text("Next usage check: \(retryDate.formatted(date: .omitted, time: .shortened))")
+                    .foregroundStyle(.secondary)
             }
             if let usage = store.providers.first(where: { $0.id == id }), let updatedAt = usage.updatedAt {
                 Text("Last update: \(updatedAt.formatted(.dateTime.hour().minute()))")

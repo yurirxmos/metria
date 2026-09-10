@@ -236,6 +236,16 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Última atualização: %@" } }
       }
     },
+    "%@ Metria will try again at %@." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Metria tentará novamente às %@." } }
+      }
+    },
+    "Next usage check: %@" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Próxima consulta de uso: %@" } }
+      }
+    },
     "Latest issue: %@" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Último problema: %@" } }
@@ -639,6 +649,11 @@
     "The provider is rate limited." : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O provedor está com limite de requisições excedido." } }
+      }
+    },
+    "The provider is temporarily unavailable for usage checks." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O provedor está temporariamente indisponível para consultas de uso." } }
       }
     },
     "The provider rejected the stored credentials." : {

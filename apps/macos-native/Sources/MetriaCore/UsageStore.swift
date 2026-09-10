@@ -264,6 +264,7 @@ public final class UsageStore: ObservableObject {
     private var scheduleTask: Task<Void, Never>?
     private var retryTasks: [ProviderID: Task<Void, Never>] = [:]
     private var retryUntilByProvider: [ProviderID: Date]
+    private var retryMessageByProvider: [ProviderID: String]
     private var isRefreshing = false
     private let enabledProvidersKey = "enabledProviderKinds"
     private let hiddenWindowTitlesKey = "hiddenUsageWindowTitles"
@@ -271,6 +272,7 @@ public final class UsageStore: ObservableObject {
     private let cachedUsageKey = "cachedProviderUsage"
     private let knownProvidersKey = "knownProviderKinds"
     private let retryUntilKey = "providerRetryUntil"
+    private let retryMessagesKey = "providerRetryMessages"
 
     private struct CachedUsage: Codable {
         struct CachedWindow: Codable {
@@ -314,11 +316,24 @@ public final class UsageStore: ObservableObject {
         if hasSavedKinds, !newlyAvailableIDs.isEmpty {
             defaults.set((Set(savedIDs).union(newlyAvailableIDs)).map(\.rawValue), forKey: enabledProvidersKey)
         }
-        self.retryUntilByProvider = Self.loadRetryDates(from: defaults, key: retryUntilKey)
+        let retryDates = Self.loadRetryDates(from: defaults, key: retryUntilKey)
             .filter { availableIDs.contains($0.key) && $0.value > Date() }
+        self.retryUntilByProvider = retryDates
+        let retryMessages = Self.loadRetryMessages(from: defaults, key: retryMessagesKey)
+            .filter { retryDates[$0.key] != nil }
+        self.retryMessageByProvider = retryMessages
         let cachedProviders = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
             .filter { availableIDs.contains($0.id) && initialEnabledProviderIDs.contains($0.id) }
-        self.providers = cachedProviders
+        self.providers = cachedProviders.map { usage in
+            guard let retryUntil = retryDates[usage.id] else { return usage }
+            var usage = usage
+            usage.error = Self.retryMessage(
+                retryMessages[usage.id]
+                    ?? String(localized: "The provider is temporarily unavailable for usage checks."),
+                until: retryUntil
+            )
+            return usage
+        }
         let savedHidden = (defaults.dictionary(forKey: hiddenWindowTitlesKey) as? [String: [String]]) ?? [:]
         let orderedRegisteredIDs = registeredProviderIDs
         var initialHiddenWindowTitles = savedHidden.reduce(into: [ProviderID: Set<String>]()) { result, entry in
@@ -385,6 +400,20 @@ public final class UsageStore: ObservableObject {
         sources.first(where: { $0.id == id })?.usageWindowTitles ?? []
     }
 
+    public func retryDate(for id: ProviderID) -> Date? {
+        guard let deadline = retryUntilByProvider[id], deadline > Date() else { return nil }
+        return deadline
+    }
+
+    public var canRefresh: Bool {
+        let now = Date()
+        return sources.contains {
+            enabledProviderIDs.contains($0.id) &&
+            $0.isAvailable &&
+            (retryUntilByProvider[$0.id] ?? .distantPast) <= now
+        }
+    }
+
     public func diagnosis(for id: ProviderID) -> String {
         guard let source = sources.first(where: { $0.id == id }) else {
             return String(localized: "This provider is not registered in Metria.")
@@ -420,6 +449,7 @@ public final class UsageStore: ObservableObject {
             retryTasks[id]?.cancel()
             retryTasks[id] = nil
             retryUntilByProvider[id] = nil
+            retryMessageByProvider[id] = nil
             saveRetryDates()
         }
         guard updatedIDs != enabledProviderIDs else { return }
@@ -505,7 +535,10 @@ public final class UsageStore: ObservableObject {
         let expiredIDs = retryUntilByProvider.compactMap { id, deadline in
             enabledProviderIDs.contains(id) && deadline > Date() ? nil : id
         }
-        expiredIDs.forEach { retryUntilByProvider[$0] = nil }
+        expiredIDs.forEach {
+            retryUntilByProvider[$0] = nil
+            retryMessageByProvider[$0] = nil
+        }
         for (id, deadline) in retryUntilByProvider {
             scheduleRetry(for: id, until: deadline)
         }
@@ -583,6 +616,7 @@ public final class UsageStore: ObservableObject {
             retryTasks[id]?.cancel()
             retryTasks[id] = nil
             retryUntilByProvider[id] = nil
+            retryMessageByProvider[id] = nil
             saveRetryDates()
             return
         }
@@ -591,6 +625,7 @@ public final class UsageStore: ObservableObject {
         case .loaded(let usage):
             replace(usage)
             retryUntilByProvider[usage.id] = nil
+            retryMessageByProvider[usage.id] = nil
             saveRetryDates()
             if !usage.windows.isEmpty {
                 saveCachedUsage()
@@ -607,17 +642,21 @@ public final class UsageStore: ObservableObject {
             }
             retryTasks[usage.id]?.cancel()
             retryTasks[usage.id] = nil
+            retryUntilByProvider[usage.id] = nil
+            retryMessageByProvider[usage.id] = nil
+            saveRetryDates()
         case .failed(let failedID, let message, let retryAfter):
-            let displayMessage = retryAfter.map { delay in
-                let retryDescription = Self.retryDescription(delay)
-                return String(localized: "\(message) Retrying in \(retryDescription).")
-            } ?? message
+            let retryUntil = retryAfter.map { Date().addingTimeInterval($0) }
+            let displayMessage = retryUntil.map { Self.retryMessage(message, until: $0) } ?? message
             if let index = providers.firstIndex(where: { $0.id == failedID }) {
                 providers[index].error = displayMessage
             } else {
                 providers.append(ProviderUsage(id: failedID, windows: [], updatedAt: nil, error: displayMessage))
             }
-            scheduleRetry(for: failedID, after: retryAfter)
+            if let retryUntil {
+                retryMessageByProvider[failedID] = message
+                scheduleRetry(for: failedID, until: retryUntil)
+            }
         }
         providers.sort { $0.id.rawValue < $1.id.rawValue }
     }
@@ -628,11 +667,6 @@ public final class UsageStore: ObservableObject {
         } else {
             providers.append(usage)
         }
-    }
-
-    private func scheduleRetry(for id: ProviderID, after delay: TimeInterval?) {
-        guard let delay, delay > 0, retryTasks[id] == nil else { return }
-        scheduleRetry(for: id, until: Date().addingTimeInterval(delay))
     }
 
     private func scheduleRetry(for id: ProviderID, until deadline: Date) {
@@ -656,6 +690,10 @@ public final class UsageStore: ObservableObject {
         }
         guard let data = try? JSONEncoder().encode(dates) else { return }
         defaults.set(data, forKey: retryUntilKey)
+        let messages = retryMessageByProvider.reduce(into: [String: String]()) { result, entry in
+            result[entry.key.rawValue] = entry.value
+        }
+        defaults.set(messages, forKey: retryMessagesKey)
     }
 
     private static func loadRetryDates(from defaults: UserDefaults, key: String) -> [ProviderID: Date] {
@@ -664,6 +702,18 @@ public final class UsageStore: ObservableObject {
         return dates.reduce(into: [ProviderID: Date]()) { result, entry in
             result[ProviderID(rawValue: entry.key)] = entry.value
         }
+    }
+
+    private static func loadRetryMessages(from defaults: UserDefaults, key: String) -> [ProviderID: String] {
+        guard let messages = defaults.dictionary(forKey: key) as? [String: String] else { return [:] }
+        return messages.reduce(into: [ProviderID: String]()) { result, entry in
+            result[ProviderID(rawValue: entry.key)] = entry.value
+        }
+    }
+
+    private static func retryMessage(_ message: String, until deadline: Date) -> String {
+        let formattedDate = deadline.formatted(date: .omitted, time: .shortened)
+        return String(localized: "\(message) Metria will try again at \(formattedDate).")
     }
 
     private func saveCachedUsage() {
@@ -689,11 +739,6 @@ public final class UsageStore: ObservableObject {
                 error: nil
             )
         }
-    }
-
-    private static func retryDescription(_ delay: TimeInterval) -> String {
-        let minutes = max(1, Int(ceil(delay / 60)))
-        return minutes == 1 ? String(localized: "about 1 minute") : String(localized: "about \(minutes) minutes")
     }
 
     deinit {
