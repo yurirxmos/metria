@@ -22,6 +22,9 @@ jobs:
       - name: Verify Swift package
         run: swift build
 
+      - name: Run native tests
+        run: swift test
+
       - name: Build native app
         run: |
           xcodebuild \

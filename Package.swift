@@ -56,6 +56,11 @@ let package = Package(
                  .copy("apps/pwa/public/sw.js"),
                  .copy("apps/pwa/public/wordlist.js")
             ]
+        ),
+        .testTarget(
+            name: "MetriaCoreTests",
+            dependencies: ["MetriaCore"],
+            path: "apps/macos-native/Tests/MetriaCoreTests"
         )
     ]
 )
