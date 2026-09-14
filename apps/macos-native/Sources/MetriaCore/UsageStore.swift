@@ -87,6 +87,7 @@ public enum ProviderKind: String, CaseIterable, Identifiable, Hashable {
     case openCodeGo = "OpenCode Go"
     case cursor = "Cursor"
     case antigravity = "Antigravity"
+    case commandCode = "Command Code"
 
     /// The single-account providers the app has always shipped. Used so that a fresh
     /// install's first run only auto-enables what already existed before the

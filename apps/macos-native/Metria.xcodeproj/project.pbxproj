@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0F9FCD0AAA8D78AACD6FA6FA /* CursorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 329ED075E7D446A1AB88C85C /* CursorProvider.swift */; };
+		10E0DF14DC782CED9506D2E3 /* CommandCodeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47A87F6EB3FA1F502E17F3E /* CommandCodeProvider.swift */; };
 		1F928336732F72EF903CE215 /* LocalPWAServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 942FF095F80398F2F48468E8 /* LocalPWAServer.swift */; };
 		31F56B15827398A3510322E7 /* CodexProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */; };
 		46A2C87091DB2E55D1B82616 /* MetriaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC404DE64C320E52402D468 /* MetriaApp.swift */; };
@@ -84,6 +85,7 @@
 		ABC404DE64C320E52402D468 /* MetriaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetriaApp.swift; sourceTree = "<group>"; };
 		B5CA5CE06369AFD9039949DE /* BIP39Wordlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BIP39Wordlist.swift; sourceTree = "<group>"; };
 		C8C81534D399ED080DD3983A /* UsageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSnapshot.swift; sourceTree = "<group>"; };
+		D47A87F6EB3FA1F502E17F3E /* CommandCodeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandCodeProvider.swift; sourceTree = "<group>"; };
 		D588191EB0695B9A4FC447E9 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderActivityMonitor.swift; sourceTree = "<group>"; };
 		FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeProvider.swift; sourceTree = "<group>"; };
@@ -145,6 +147,7 @@
 				A6CA194C20469303B4B5626A /* ClaudeProfile.swift */,
 				FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */,
 				0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */,
+				D47A87F6EB3FA1F502E17F3E /* CommandCodeProvider.swift */,
 				329ED075E7D446A1AB88C85C /* CursorProvider.swift */,
 				2144FE93ADD1A194EEA0D854 /* CursorStateStore.swift */,
 				8F37E9B9BF1481EC13F0AB9B /* KeychainReader.swift */,
@@ -303,6 +306,7 @@
 				58F77D31DB2B493ADB9ACB9A /* ClaudeProfile.swift in Sources */,
 				EF5641DDF417468BFB615AAD /* ClaudeProvider.swift in Sources */,
 				31F56B15827398A3510322E7 /* CodexProvider.swift in Sources */,
+				10E0DF14DC782CED9506D2E3 /* CommandCodeProvider.swift in Sources */,
 				0F9FCD0AAA8D78AACD6FA6FA /* CursorProvider.swift in Sources */,
 				C60A0D354E8CDD43466B3457 /* CursorStateStore.swift in Sources */,
 				6EF9BB36424EF416AAE77439 /* KeychainReader.swift in Sources */,

@@ -6,7 +6,7 @@ import MetriaCore
 /// and the sidebar gauge's gradient. Add a case here alongside every new provider file.
 extension ProviderKind {
     var symbol: String {
-        switch self { case .claude: "sparkles"; case .codex: "hexagon"; case .openCodeGo: "globe.americas.fill"; case .cursor: "cursorarrow.rays"; case .antigravity: "sparkle" }
+        switch self { case .claude: "sparkles"; case .codex: "hexagon"; case .openCodeGo: "globe.americas.fill"; case .cursor: "cursorarrow.rays"; case .antigravity: "sparkle"; case .commandCode: "chevron.left.forwardslash.chevron.right" }
     }
 
     var reconnectCommand: String {
@@ -16,11 +16,12 @@ extension ProviderKind {
         case .openCodeGo: "opencode auth login"
         case .cursor: "open -a Cursor"
         case .antigravity: "open -a Antigravity"
+        case .commandCode: "cmd login"
         }
     }
 
     var logoName: String? {
-        switch self { case .claude: "claude-logo"; case .codex: "codex-logo"; case .openCodeGo: "opencode-logo"; case .cursor: "cursor-logo"; case .antigravity: "antigravity-logo" }
+        switch self { case .claude: "claude-logo"; case .codex: "codex-logo"; case .openCodeGo: "opencode-logo"; case .cursor: "cursor-logo"; case .antigravity: "antigravity-logo"; case .commandCode: "commandcode-logo" }
     }
 
     var logo: NSImage? {
@@ -40,6 +41,10 @@ extension ProviderKind {
             LinearGradient(colors: [.gray, .white], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .antigravity:
             LinearGradient(colors: [.blue, .blue], startPoint: .leading, endPoint: .trailing)
+        case .commandCode:
+            // The Command Code mark is white on black, so the gauge follows it rather than
+            // inventing an accent the brand does not use.
+            LinearGradient(colors: [.white, .gray], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
     }
 }
