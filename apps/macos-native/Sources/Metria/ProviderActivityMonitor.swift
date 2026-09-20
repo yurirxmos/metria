@@ -47,7 +47,11 @@ final class ProviderActivityMonitor: ObservableObject {
         // Antigravity is matched on its bundle path plus the CLI binary's path
         // suffix: a bare "agy" substring would be too loose, the same way a
         // bare "cursor" was for Cursor above.
-        .antigravity: ["antigravity.app", "/agy"]
+        .antigravity: ["antigravity.app", "/agy"],
+        // Command Code's npm package is `command-code`, so its install path is what a running
+        // session shows. Its launcher is a bare `cmd`, which is far too loose a substring to
+        // match on for the same reason a bare "cursor" was.
+        .commandCode: ["command-code"]
     ]
 
     // Cursor has no per-session files: its agent conversations live in the same
@@ -62,7 +66,8 @@ final class ProviderActivityMonitor: ObservableObject {
         .cursor: ["Library/Application Support/Cursor/User/globalStorage"],
         // Same reasoning as Cursor: agent activity lands in the globalStorage
         // database WAL, while a merely open IDE writes nothing.
-        .antigravity: ["Library/Application Support/Antigravity/User/globalStorage"]
+        .antigravity: ["Library/Application Support/Antigravity/User/globalStorage"],
+        .commandCode: [".commandcode/sessions"]
     ]
 
     /// Maps a provider id onto the directories that count as activity for that *account*.

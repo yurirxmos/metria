@@ -335,6 +335,7 @@ enum ProviderAppearance {
         case .openCodeGo: .white
         case .cursor: .gray
         case .antigravity: .blue
+        case .commandCode: .white
         }
     }
 }
@@ -483,6 +484,8 @@ extension UsageWindow {
             titles = [CursorProvider.cursorModelsTitle, CursorProvider.apiUsageTitle]
         case .antigravity:
             titles = [AntigravityProvider.fiveHourGeminiTitle, AntigravityProvider.weeklyGeminiTitle, AntigravityProvider.fiveHourOthersTitle, AntigravityProvider.weeklyOthersTitle]
+        case .commandCode:
+            titles = [CommandCodeProvider.fiveHourLimitTitle, CommandCodeProvider.weeklyLimitTitle]
         }
         return titles.indices.contains(index) ? titles[index] : title
     }

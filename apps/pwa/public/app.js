@@ -61,8 +61,8 @@ function renderSnapshot(snapshot) {
   }
 }
 
-/** Cursor is the only provider that reports what a cycle costs, and it reports cents.
- * Whole dollars drop the decimals, matching the desktop apps' "$130 / $250". */
+/** Cursor and Command Code are the only providers that report what a cycle costs, and both
+ * report cents. Whole dollars drop the decimals, matching the desktop apps' "$130 / $250". */
 function spendText(provider) {
   const used = Number(provider.usedCents);
   const limit = Number(provider.limitCents);
@@ -79,7 +79,7 @@ function usageColor(percent) {
 }
 
 function providerLogo(name) {
-  return { Antigravity: "antigravity-logo.png", Claude: "claude-logo.png", Codex: "codex-logo.png", "OpenCode Go": "opencode-logo.png", Cursor: "cursor-logo.png" }[name] || "";
+  return { Antigravity: "antigravity-logo.png", Claude: "claude-logo.png", Codex: "codex-logo.png", "OpenCode Go": "opencode-logo.png", Cursor: "cursor-logo.png", "Command Code": "commandcode-logo.png" }[name] || "";
 }
 
 function formatDate(value) {

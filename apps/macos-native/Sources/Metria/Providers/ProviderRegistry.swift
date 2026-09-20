@@ -18,7 +18,8 @@ enum ProviderRegistry {
             CodexProvider(),
             OpenCodeGoProvider(),
             CursorProvider(),
-            AntigravityProvider()
+            AntigravityProvider(),
+            CommandCodeProvider()
         ]
     }
 }

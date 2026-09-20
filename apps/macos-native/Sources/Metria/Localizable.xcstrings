@@ -830,6 +830,21 @@
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alertas de uso" } }
       }
+    },
+    "Sign in to Command Code to create a local API credential." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Entre no Command Code para criar uma credencial de API local." } }
+      }
+    },
+    "Sign in to Command Code again to refresh usage." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Entre no Command Code novamente para atualizar o uso." } }
+      }
+    },
+    "Metria tracks your AI coding usage across Claude, Codex, OpenCode Go, Cursor, Antigravity, and Command Code, right from your Mac." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "O Metria acompanha o uso das suas ferramentas de IA — Claude, Codex, OpenCode Go, Cursor, Antigravity e Command Code — direto no seu Mac." } }
+      }
     }
   },
   "version" : "1.0"
