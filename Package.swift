@@ -35,7 +35,10 @@ let package = Package(
                  "apps/macos-native/Sources/Metria/Providers/ProviderKind+Presentation.swift",
                   "apps/macos-native/Sources/Metria/Providers/ProviderRegistry.swift",
                  "apps/macos-native/Sources/Metria/Updater.swift",
-                 "apps/macos-native/Sources/Metria/OnboardingView.swift"
+                 "apps/macos-native/Sources/Metria/OnboardingView.swift",
+                 "apps/macos-native/Sources/Metria/ThresholdCrossingTracker.swift",
+                 "apps/macos-native/Sources/Metria/UsageNotifier.swift",
+                 "apps/macos-native/Sources/Metria/UsageSoundAlerter.swift"
              ],
               resources: [
                   .process("apps/macos-native/Sources/Metria/Localizable.xcstrings"),

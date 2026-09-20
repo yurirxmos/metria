@@ -11,6 +11,8 @@
 		10E0DF14DC782CED9506D2E3 /* CommandCodeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47A87F6EB3FA1F502E17F3E /* CommandCodeProvider.swift */; };
 		1F928336732F72EF903CE215 /* LocalPWAServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 942FF095F80398F2F48468E8 /* LocalPWAServer.swift */; };
 		31F56B15827398A3510322E7 /* CodexProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */; };
+		3C228112E1DD9D0322EED9BF /* ThresholdCrossingTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C3A8A8B544FCF7114BE7F7C /* ThresholdCrossingTracker.swift */; };
+		3F11A37FF80A223BC6C19AD6 /* UsageNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4A5B69EBF050D0E668B5D8D /* UsageNotifier.swift */; };
 		46A2C87091DB2E55D1B82616 /* MetriaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC404DE64C320E52402D468 /* MetriaApp.swift */; };
 		4721758378AC7CB6DCE97443 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = EF981CF3ECD2D27A2B2730B3 /* Sparkle */; };
 		52564D3CB2D6251DD5733657 /* PairingSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17B8670774860D40198385E3 /* PairingSecret.swift */; };
@@ -29,6 +31,7 @@
 		B0D16525171231FFE5C69C84 /* OpenCodeGoProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 488A30C52B2A951130A87634 /* OpenCodeGoProvider.swift */; };
 		BCAAA4FF3E584906BD4F3006 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F76937A0473449017F3EB57 /* OnboardingView.swift */; };
 		BD14854124859D3F61FFB61D /* AntigravityProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 358AA6325C40633CC548F9A3 /* AntigravityProvider.swift */; };
+		C32F260FF0C2A61FE2F5538B /* UsageSoundAlerter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28A2DCB6549B42AB4A6EBCF0 /* UsageSoundAlerter.swift */; };
 		C60A0D354E8CDD43466B3457 /* CursorStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2144FE93ADD1A194EEA0D854 /* CursorStateStore.swift */; };
 		E87CBB5215F9C3C201D860CE /* UsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C81534D399ED080DD3983A /* UsageSnapshot.swift */; };
 		EF5641DDF417468BFB615AAD /* ClaudeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */; };
@@ -62,10 +65,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0C3A8A8B544FCF7114BE7F7C /* ThresholdCrossingTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThresholdCrossingTracker.swift; sourceTree = "<group>"; };
 		0D7C2E17F5F19EAF6C4C74B2 /* CodexProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexProvider.swift; sourceTree = "<group>"; };
 		17B8670774860D40198385E3 /* PairingSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSecret.swift; sourceTree = "<group>"; };
 		18B16A90CF8351DF99C63A8A /* LocalNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalNetwork.swift; sourceTree = "<group>"; };
 		2144FE93ADD1A194EEA0D854 /* CursorStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorStateStore.swift; sourceTree = "<group>"; };
+		28A2DCB6549B42AB4A6EBCF0 /* UsageSoundAlerter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSoundAlerter.swift; sourceTree = "<group>"; };
 		329ED075E7D446A1AB88C85C /* CursorProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorProvider.swift; sourceTree = "<group>"; };
 		358AA6325C40633CC548F9A3 /* AntigravityProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityProvider.swift; sourceTree = "<group>"; };
 		36216E6ACB911FA08CA36234 /* Updater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updater.swift; sourceTree = "<group>"; };
@@ -87,6 +92,7 @@
 		C8C81534D399ED080DD3983A /* UsageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageSnapshot.swift; sourceTree = "<group>"; };
 		D47A87F6EB3FA1F502E17F3E /* CommandCodeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandCodeProvider.swift; sourceTree = "<group>"; };
 		D588191EB0695B9A4FC447E9 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		E4A5B69EBF050D0E668B5D8D /* UsageNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageNotifier.swift; sourceTree = "<group>"; };
 		EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderActivityMonitor.swift; sourceTree = "<group>"; };
 		FF582539BF3108580AC1F4FC /* ClaudeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeProvider.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -114,7 +120,10 @@
 				97692A6C8502A27D4FA476F0 /* MetriaResources.swift */,
 				5F76937A0473449017F3EB57 /* OnboardingView.swift */,
 				EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */,
+				0C3A8A8B544FCF7114BE7F7C /* ThresholdCrossingTracker.swift */,
 				36216E6ACB911FA08CA36234 /* Updater.swift */,
+				E4A5B69EBF050D0E668B5D8D /* UsageNotifier.swift */,
+				28A2DCB6549B42AB4A6EBCF0 /* UsageSoundAlerter.swift */,
 				5B52A35A5B1800D8DF53A0E9 /* Providers */,
 			);
 			path = Metria;
@@ -320,7 +329,10 @@
 				577F4D95C96F959AA5487127 /* ProviderError.swift in Sources */,
 				9CC880BFC528518A30EFE40A /* ProviderKind+Presentation.swift in Sources */,
 				9401FE6A4D61FC25C4CADA12 /* ProviderRegistry.swift in Sources */,
+				3C228112E1DD9D0322EED9BF /* ThresholdCrossingTracker.swift in Sources */,
 				636C3963D32BD250319A58EF /* Updater.swift in Sources */,
+				3F11A37FF80A223BC6C19AD6 /* UsageNotifier.swift in Sources */,
+				C32F260FF0C2A61FE2F5538B /* UsageSoundAlerter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

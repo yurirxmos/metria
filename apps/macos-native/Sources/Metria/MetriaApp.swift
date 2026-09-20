@@ -6,6 +6,8 @@ import Foundation
 import MetriaCore
 import ServiceManagement
 import SwiftUI
+import UniformTypeIdentifiers
+import UserNotifications
 
 /// Stores the pairing master secret in the macOS Keychain. The secret never leaves the
 /// Mac in plaintext: the PWA only ever receives it via the QR code or 12-word phrase,
@@ -1886,6 +1888,20 @@ struct SettingsView: View {
     let onChangeMenuBarAlertSoundName: (String) -> Void
     @AppStorage("showMenuBarProviderNames") private var showMenuBarProviderNames = true
     let onChangeMenuBarProviderNames: (Bool) -> Void
+    @AppStorage("soundAlertsEnabled") private var soundAlertsEnabled = false
+    @AppStorage("soundAlertCautionEnabled") private var soundAlertCautionEnabled = true
+    @AppStorage("soundAlertWarningEnabled") private var soundAlertWarningEnabled = true
+    @AppStorage("soundAlertCriticalEnabled") private var soundAlertCriticalEnabled = true
+    @AppStorage("soundAlertName") private var soundAlertName = "Glass"
+    @AppStorage("soundAlertVolume") private var soundAlertVolume = 1.0
+    @AppStorage("usageNotificationsEnabled") private var usageNotificationsEnabled = false
+    @AppStorage("usageNotificationsCautionEnabled")
+    private var usageNotificationsCautionEnabled = true
+    @AppStorage("usageNotificationsWarningEnabled")
+    private var usageNotificationsWarningEnabled = true
+    @AppStorage("usageNotificationsCriticalEnabled")
+    private var usageNotificationsCriticalEnabled = true
+    @State private var notificationsBlocked = false
     @State private var cautionThreshold: Int
     @State private var warningThreshold: Int
     @State private var criticalThreshold: Int
@@ -1893,6 +1909,7 @@ struct SettingsView: View {
     @State private var warningColor: Color
     @State private var criticalColor: Color
     let onChangeMenuBarAlertSettings: (MenuBarAlertSettings) -> Void
+    let usageNotifier: UsageNotifier
     @State private var sidebarOpacity: Double
     let onChangeSidebarOpacity: (Double) -> Void
     @State private var launchAtLoginEnabled: Bool
@@ -1948,6 +1965,7 @@ struct SettingsView: View {
         onChangeMenuBarProviderNames: @escaping (Bool) -> Void,
         menuBarAlertSettings: MenuBarAlertSettings,
         onChangeMenuBarAlertSettings: @escaping (MenuBarAlertSettings) -> Void,
+        usageNotifier: UsageNotifier,
         sidebarOpacity: Double,
         onChangeSidebarOpacity: @escaping (Double) -> Void,
         launchAtLoginEnabled: Bool,
@@ -1995,6 +2013,7 @@ struct SettingsView: View {
         _warningColor = State(initialValue: Color(nsColor: menuBarAlertSettings.warningColor))
         _criticalColor = State(initialValue: Color(nsColor: menuBarAlertSettings.criticalColor))
         self.onChangeMenuBarAlertSettings = onChangeMenuBarAlertSettings
+        self.usageNotifier = usageNotifier
         _sidebarOpacity = State(initialValue: sidebarOpacity)
         self.onChangeSidebarOpacity = onChangeSidebarOpacity
         _launchAtLoginEnabled = State(initialValue: launchAtLoginEnabled)
@@ -2296,6 +2315,33 @@ struct SettingsView: View {
                 Label("Usage alerts", systemImage: "bell.badge")
             }
 
+            Section("Sound alerts") {
+                Toggle("Play sound when crossing thresholds", isOn: $soundAlertsEnabled)
+                soundAlertControls
+                    .disabled(!soundAlertsEnabled)
+                Text("Plays once each time a provider crosses one of the thresholds above.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Notifications") {
+                Toggle(
+                    "Show notifications when crossing thresholds",
+                    isOn: $usageNotificationsEnabled
+                )
+                .onChange(of: usageNotificationsEnabled) { enabled in
+                    Task { await refreshNotificationAuthorization(requestingIfNeeded: enabled) }
+                }
+                .task { await refreshNotificationAuthorization(requestingIfNeeded: false) }
+                notificationLevelControls
+                    .disabled(!usageNotificationsEnabled)
+                if notificationsBlocked {
+                    Text("Notifications are blocked for Metria in System Settings.")
+                        .foregroundStyle(.secondary)
+                }
+                Text("Notifications follow the system Focus and Do Not Disturb state.")
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Toggle("Show provider names", isOn: $showMenuBarProviderNames)
                     .onChange(of: showMenuBarProviderNames) { onChangeMenuBarProviderNames($0) }
@@ -2358,6 +2404,130 @@ struct SettingsView: View {
                 warningColor: NSColor(warningColor),
                 criticalColor: NSColor(criticalColor)
             ))
+    }
+
+    private var soundAlertControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                soundLevelControl(level: .caution, isOn: $soundAlertCautionEnabled)
+                soundLevelControl(level: .warning, isOn: $soundAlertWarningEnabled)
+                soundLevelControl(level: .critical, isOn: $soundAlertCriticalEnabled)
+            }
+            Picker(
+                "Sound",
+                selection: Binding(
+                    get: { soundAlertName },
+                    set: { newValue in
+                        guard newValue == UsageSoundAlerter.customName else {
+                            soundAlertName = newValue
+                            return
+                        }
+                        pickCustomSound()
+                    }
+                )
+            ) {
+                ForEach(UsageSoundAlerter.systemSoundNames, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+                Text("Custom…").tag(UsageSoundAlerter.customName)
+            }
+            HStack {
+                Slider(value: $soundAlertVolume, in: 0...1)
+                Text("\(Int((soundAlertVolume * 100).rounded()))%")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .frame(width: 42, alignment: .trailing)
+            }
+            Button("Test") { UsageSoundAlerter.playTestSound() }
+        }
+    }
+
+    private func soundLevelControl(
+        level: ThresholdCrossingTracker.Level, isOn: Binding<Bool>
+    ) -> some View {
+        GridRow {
+            Text(localizedAlertLevelTitle(level))
+            Toggle(localizedSoundAccessibilityLabel(level), isOn: isOn)
+                .labelsHidden()
+        }
+    }
+
+    /// Opens a file picker and copies the chosen audio file into Application Support as the
+    /// custom alert sound. Canceling leaves the current selection untouched.
+    private func pickCustomSound() {
+        try? FileManager.default.createDirectory(
+            at: UsageSoundAlerter.customSoundDirectory, withIntermediateDirectories: true)
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.audio]
+        panel.directoryURL = UsageSoundAlerter.customSoundDirectory
+        guard panel.runModal() == .OK, let url = panel.url,
+            UsageSoundAlerter.importCustomSound(from: url)
+        else { return }
+        soundAlertName = UsageSoundAlerter.customName
+    }
+
+    private var notificationLevelControls: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+            notificationLevelControl(
+                level: .caution, isOn: $usageNotificationsCautionEnabled)
+            notificationLevelControl(
+                level: .warning, isOn: $usageNotificationsWarningEnabled)
+            notificationLevelControl(
+                level: .critical, isOn: $usageNotificationsCriticalEnabled)
+        }
+    }
+
+    private func notificationLevelControl(
+        level: ThresholdCrossingTracker.Level, isOn: Binding<Bool>
+    ) -> some View {
+        GridRow {
+            Text(localizedAlertLevelTitle(level))
+            Toggle(localizedNotificationAccessibilityLabel(level), isOn: isOn)
+                .labelsHidden()
+        }
+    }
+
+    private func localizedAlertLevelTitle(_ level: ThresholdCrossingTracker.Level) -> String {
+        switch level {
+        case .caution: return String(localized: "Caution")
+        case .warning: return String(localized: "Warning")
+        case .critical: return String(localized: "Critical")
+        }
+    }
+
+    private func localizedSoundAccessibilityLabel(_ level: ThresholdCrossingTracker.Level) -> String {
+        switch level {
+        case .caution: return String(localized: "Caution sound")
+        case .warning: return String(localized: "Warning sound")
+        case .critical: return String(localized: "Critical sound")
+        }
+    }
+
+    private func localizedNotificationAccessibilityLabel(
+        _ level: ThresholdCrossingTracker.Level
+    ) -> String {
+        switch level {
+        case .caution: return String(localized: "Caution notifications")
+        case .warning: return String(localized: "Warning notifications")
+        case .critical: return String(localized: "Critical notifications")
+        }
+    }
+
+    /// Requests permission the first time the feature is switched on and mirrors a denial
+    /// from System Settings back into the toggle and the hint text.
+    @MainActor
+    private func refreshNotificationAuthorization(requestingIfNeeded: Bool) async {
+        if requestingIfNeeded {
+            await usageNotifier.requestAuthorizationIfNeeded()
+        }
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        notificationsBlocked = settings.authorizationStatus == .denied
+        if notificationsBlocked {
+            usageNotificationsEnabled = false
+        }
     }
 
     /// A small colored status dot shown right after the provider name: green when connected
@@ -2635,7 +2805,7 @@ extension NSMenu {
     }
 }
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     let store = UsageStore(providers: ProviderRegistry.makeProviders())
     var statusItem: NSStatusItem!
     var popover: NSPopover!
@@ -2650,6 +2820,8 @@ extension NSMenu {
     let pairing = PairingManager()
     private let updater = AppUpdater()
     private let localPWAServer = LocalPWAServer()
+    let soundAlerter = UsageSoundAlerter()
+    let usageNotifier = UsageNotifier()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         migrateDisplayModeIfNeeded()
@@ -2671,6 +2843,8 @@ extension NSMenu {
             self?.updateStatusItem(providers)
             self?.checkUsageAlertSound(providers)
             guard let self else { return }
+            self.soundAlerter.process(providers)
+            self.usageNotifier.process(providers)
             self.ntfyPublisher.publish(providers, secret: self.pairing.currentSecret)
         }
         enabledProvidersObservation = store.$enabledProviderIDs.sink { [weak self] _ in
@@ -2807,6 +2981,8 @@ extension NSMenu {
         saveMenuBarAlertColor(settings.cautionColor, forKey: "menuBarCautionColor")
         saveMenuBarAlertColor(settings.warningColor, forKey: "menuBarWarningColor")
         saveMenuBarAlertColor(settings.criticalColor, forKey: "menuBarCriticalColor")
+        soundAlerter.settingsDidChange()
+        usageNotifier.settingsDidChange()
         updateStatusItem(store.providers)
         sidebarWindows.forEach { $0.contentView = makeHostingView() }
         popover?.contentViewController = NSHostingController(
@@ -2925,6 +3101,10 @@ extension NSMenu {
             withTitle: String(localized: "Open dashboard"), action: #selector(togglePopover), keyEquivalent: "",
             symbolName: "rectangle.dock")
         addDisplaySurfaceMenu(to: menu)
+        let soundItem = menu.addItem(
+            withTitle: String(localized: "Sound Alerts"), action: nil, keyEquivalent: "",
+            symbolName: "speaker.wave.2")
+        soundItem.submenu = buildSoundAlertsMenu()
         menu.addItem(.separator())
         menu.addItem(
             withTitle: String(localized: "Settings…"), action: #selector(openSettings), keyEquivalent: ",",
@@ -2943,6 +3123,62 @@ extension NSMenu {
                 updater
         }
         return menu
+    }
+
+    private func buildSoundAlertsMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
+        let onItem = menu.addItem(
+            withTitle: String(localized: "Unmuted"), action: #selector(soundAlertsOn), keyEquivalent: "")
+        onItem.target = self
+        let muteHourItem = menu.addItem(
+            withTitle: String(localized: "Mute 1 Hour"), action: #selector(muteSoundAlertsForOneHour),
+            keyEquivalent: "")
+        muteHourItem.target = self
+        let muteTomorrowItem = menu.addItem(
+            withTitle: String(localized: "Mute Until Tomorrow"),
+            action: #selector(muteSoundAlertsUntilTomorrow), keyEquivalent: "")
+        muteTomorrowItem.target = self
+        updateSoundAlertsMenuStates(menu)
+        return menu
+    }
+
+    private func updateSoundAlertsMenuStates(_ menu: NSMenu) {
+        // With the master switch off nothing here can produce sound, so no row may claim
+        // to be active: disable all of them and clear every checkmark.
+        let enabled = soundAlerter.isEnabled
+        let muted = soundAlerter.isMuted
+        for item in menu.items {
+            switch item.action {
+            case #selector(soundAlertsOn):
+                item.state = enabled && !muted ? .on : .off
+                item.isEnabled = enabled
+            case #selector(muteSoundAlertsForOneHour), #selector(muteSoundAlertsUntilTomorrow):
+                item.state = enabled && muted ? .on : .off
+                item.isEnabled = enabled
+            default: break
+            }
+        }
+    }
+
+    /// Refreshes the Sound Alerts submenu checkmarks right before the status item menu
+    /// opens, so mute state picked in Settings or the menu is always current.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        updateSoundAlertsMenuStates(menu)
+    }
+
+    @objc private func soundAlertsOn() {
+        soundAlerter.clearMute()
+    }
+
+    @objc private func muteSoundAlertsForOneHour() {
+        soundAlerter.mute(untilInterval: Date().timeIntervalSince1970 + 60 * 60)
+    }
+
+    @objc private func muteSoundAlertsUntilTomorrow() {
+        let tomorrow = Calendar.current.date(
+            byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
+        soundAlerter.mute(untilInterval: (tomorrow ?? Date()).timeIntervalSince1970)
     }
 
     private func showNotchMenu(at windowPoint: NSPoint) {
@@ -3842,6 +4078,7 @@ extension NSMenu {
                 onChangeMenuBarAlertSettings: { [weak self] settings in
                     self?.setMenuBarAlertSettings(settings)
                 },
+                usageNotifier: usageNotifier,
                 sidebarOpacity: sidebarOpacity,
                 onChangeSidebarOpacity: { [weak self] opacity in self?.setSidebarOpacity(opacity) },
                 launchAtLoginEnabled: LaunchAtLoginManager.isEnabled,
