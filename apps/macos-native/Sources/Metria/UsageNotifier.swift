@@ -54,10 +54,14 @@ final class UsageNotifier {
         guard isEnabled, !crossings.isEmpty else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
+            let activeCrossings = crossings.filter { $0.level.isNotificationEnabled }
+            guard self.isEnabled, !activeCrossings.isEmpty else { return }
             let settings = await UNUserNotificationCenter.current().notificationSettings()
             self.isAuthorized = settings.authorizationStatus == .authorized
-            guard self.isAuthorized else { return }
-            await self.post(crossings)
+            guard self.isAuthorized, self.isEnabled else { return }
+            let currentCrossings = activeCrossings.filter { $0.level.isNotificationEnabled }
+            guard !currentCrossings.isEmpty else { return }
+            await self.post(currentCrossings)
         }
     }
 

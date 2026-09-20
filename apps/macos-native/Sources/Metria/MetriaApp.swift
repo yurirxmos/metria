@@ -2196,9 +2196,9 @@ struct SettingsView: View {
     private var soundAlertControls: some View {
         VStack(alignment: .leading, spacing: 12) {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
-                soundLevelControl(label: String(localized: "Caution"), isOn: $soundAlertCautionEnabled)
-                soundLevelControl(label: String(localized: "Warning"), isOn: $soundAlertWarningEnabled)
-                soundLevelControl(label: String(localized: "Critical"), isOn: $soundAlertCriticalEnabled)
+                soundLevelControl(level: .caution, isOn: $soundAlertCautionEnabled)
+                soundLevelControl(level: .warning, isOn: $soundAlertWarningEnabled)
+                soundLevelControl(level: .critical, isOn: $soundAlertCriticalEnabled)
             }
             Picker(
                 "Sound",
@@ -2229,10 +2229,12 @@ struct SettingsView: View {
         }
     }
 
-    private func soundLevelControl(label: String, isOn: Binding<Bool>) -> some View {
+    private func soundLevelControl(
+        level: ThresholdCrossingTracker.Level, isOn: Binding<Bool>
+    ) -> some View {
         GridRow {
-            Text(label)
-            Toggle("\(label) sound", isOn: isOn)
+            Text(localizedAlertLevelTitle(level))
+            Toggle(localizedSoundAccessibilityLabel(level), isOn: isOn)
                 .labelsHidden()
         }
     }
@@ -2257,19 +2259,47 @@ struct SettingsView: View {
     private var notificationLevelControls: some View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
             notificationLevelControl(
-                label: String(localized: "Caution"), isOn: $usageNotificationsCautionEnabled)
+                level: .caution, isOn: $usageNotificationsCautionEnabled)
             notificationLevelControl(
-                label: String(localized: "Warning"), isOn: $usageNotificationsWarningEnabled)
+                level: .warning, isOn: $usageNotificationsWarningEnabled)
             notificationLevelControl(
-                label: String(localized: "Critical"), isOn: $usageNotificationsCriticalEnabled)
+                level: .critical, isOn: $usageNotificationsCriticalEnabled)
         }
     }
 
-    private func notificationLevelControl(label: String, isOn: Binding<Bool>) -> some View {
+    private func notificationLevelControl(
+        level: ThresholdCrossingTracker.Level, isOn: Binding<Bool>
+    ) -> some View {
         GridRow {
-            Text(label)
-            Toggle("\(label) notifications", isOn: isOn)
+            Text(localizedAlertLevelTitle(level))
+            Toggle(localizedNotificationAccessibilityLabel(level), isOn: isOn)
                 .labelsHidden()
+        }
+    }
+
+    private func localizedAlertLevelTitle(_ level: ThresholdCrossingTracker.Level) -> String {
+        switch level {
+        case .caution: return String(localized: "Caution")
+        case .warning: return String(localized: "Warning")
+        case .critical: return String(localized: "Critical")
+        }
+    }
+
+    private func localizedSoundAccessibilityLabel(_ level: ThresholdCrossingTracker.Level) -> String {
+        switch level {
+        case .caution: return String(localized: "Caution sound")
+        case .warning: return String(localized: "Warning sound")
+        case .critical: return String(localized: "Critical sound")
+        }
+    }
+
+    private func localizedNotificationAccessibilityLabel(
+        _ level: ThresholdCrossingTracker.Level
+    ) -> String {
+        switch level {
+        case .caution: return String(localized: "Caution notifications")
+        case .warning: return String(localized: "Warning notifications")
+        case .critical: return String(localized: "Critical notifications")
         }
     }
 

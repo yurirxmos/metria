@@ -745,6 +745,111 @@
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "cerca de %lld minutos" } }
       }
+    },
+    "Sound alerts" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alertas sonoros" } }
+      }
+    },
+    "Play sound when crossing thresholds" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Reproduzir som ao cruzar limites" } }
+      }
+    },
+    "Plays once each time a provider crosses one of the thresholds above." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Reproduz uma vez cada vez que um provedor cruza um dos limites acima." } }
+      }
+    },
+    "Notifications" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Notificações" } }
+      }
+    },
+    "Show notifications when crossing thresholds" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar notificações ao cruzar limites" } }
+      }
+    },
+    "Notifications are blocked for Metria in System Settings." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As notificações do Metria estão bloqueadas nos Ajustes do Sistema." } }
+      }
+    },
+    "Notifications follow the system Focus and Do Not Disturb state." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "As notificações seguem o estado de Foco e Não Perturbe do sistema." } }
+      }
+    },
+    "Sound" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Som" } }
+      }
+    },
+    "Custom…" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Personalizado…" } }
+      }
+    },
+    "Test" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Testar" } }
+      }
+    },
+    "Sound Alerts" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alertas sonoros" } }
+      }
+    },
+    "Unmuted" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Som ativado" } }
+      }
+    },
+    "Mute 1 Hour" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Silenciar por 1 hora" } }
+      }
+    },
+    "Mute Until Tomorrow" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Silenciar até amanhã" } }
+      }
+    },
+    "Caution sound" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Som de cautela" } }
+      }
+    },
+    "Warning sound" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Som de aviso" } }
+      }
+    },
+    "Critical sound" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Som crítico" } }
+      }
+    },
+    "Caution notifications" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Notificações de cautela" } }
+      }
+    },
+    "Warning notifications" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Notificações de aviso" } }
+      }
+    },
+    "Critical notifications" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Notificações críticas" } }
+      }
+    },
+    "%@ reached %lld%% of its usage limit" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "%@ atingiu %lld%% do limite de uso" } }
+      }
     }
   },
   "version" : "1.0"
