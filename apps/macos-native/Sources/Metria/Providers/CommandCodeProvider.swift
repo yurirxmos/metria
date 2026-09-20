@@ -33,7 +33,7 @@ struct CommandCodeProvider: UsageProvider {
     }
 
     var isAvailable: Bool {
-        environmentAPIKey != nil || FileManager.default.fileExists(atPath: authURL.path)
+        (try? readAPIKey()) != nil
     }
 
     func fetch() async -> ProviderFetchResult {
@@ -141,16 +141,21 @@ struct CommandCodeProvider: UsageProvider {
 
         var windows: [UsageWindow] {
             [
-                windowLimits.fiveHour.map { window($0, title: CommandCodeProvider.fiveHourLimitTitle) },
-                windowLimits.weekly.map { window($0, title: CommandCodeProvider.weeklyLimitTitle) },
+                windowLimits.fiveHour.flatMap { window($0, title: CommandCodeProvider.fiveHourLimitTitle) },
+                windowLimits.weekly.flatMap { window($0, title: CommandCodeProvider.weeklyLimitTitle) },
             ].compactMap { $0 }
         }
 
         /// A window with no cap has no percentage worth drawing, and `exceeded` is then the
         /// only authoritative signal left — the server sets it while the window is blocking
         /// requests, exactly as the CLI's own limit message reports.
-        private func window(_ raw: Window, title: String) -> UsageWindow {
-            let resetDate = raw.resetAt.map { Date(timeIntervalSince1970: Self.seconds(fromEpoch: $0)) }
+        private func window(_ raw: Window, title: String) -> UsageWindow? {
+            guard raw.used.isFinite, raw.cap.isFinite, raw.used >= 0, raw.cap >= 0 else {
+                return nil
+            }
+            let resetDate = raw.resetAt.flatMap { value in
+                value.isFinite ? Date(timeIntervalSince1970: Self.seconds(fromEpoch: value)) : nil
+            }
             guard raw.cap > 0 else {
                 return UsageWindow(title: title, percent: raw.exceeded == true ? 100 : 0, resetDate: resetDate)
             }
