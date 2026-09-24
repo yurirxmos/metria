@@ -40,7 +40,9 @@ struct AntigravityProvider: UsageProvider {
         guard let executable = Self.resolveBinary() else { throw ProviderError.unavailable }
         return try await withCheckedThrowingContinuation { continuation in
             let worker = DispatchQueue(label: "metria.antigravity", qos: .utility)
-            let state = TimeoutState()
+            // resumed tracks whether the continuation has been consumed.
+            // Every path that calls continuation.resume MUST check this first.
+            let resumed = AtomicFlag()
             worker.async {
                 let process = Process()
                 process.executableURL = executable
@@ -53,7 +55,7 @@ struct AntigravityProvider: UsageProvider {
                 // waitUntilExit and could never fire a timer scheduled on itself.
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.timeout) {
                     if process.isRunning { process.terminate() }
-                    if state.claim() {
+                    if resumed.claim() {
                         continuation.resume(throwing: ProviderError.unavailable)
                     }
                 }
@@ -63,15 +65,18 @@ struct AntigravityProvider: UsageProvider {
                     let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
                     guard process.terminationStatus == 0,
                           let output = String(data: data, encoding: .utf8),
-                          !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                          state.claim()
+                          !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     else {
-                        continuation.resume(throwing: ProviderError.unavailable)
+                        if resumed.claim() {
+                            continuation.resume(throwing: ProviderError.unavailable)
+                        }
                         return
                     }
-                    continuation.resume(returning: output)
+                    if resumed.claim() {
+                        continuation.resume(returning: output)
+                    }
                 } catch {
-                    if state.claim() {
+                    if resumed.claim() {
                         continuation.resume(throwing: ProviderError.unavailable)
                     }
                 }
@@ -147,12 +152,14 @@ struct AntigravityProvider: UsageProvider {
     }
 }
 
-/// One-shot guard so exactly one of the watchdog and the completion path
-/// resumes the continuation.
-private final class TimeoutState: @unchecked Sendable {
+/// Atomic flag ensuring exactly one caller wins the right to resume a
+/// continuation. Every code path that touches `continuation.resume` must
+/// call `claim()` first and proceed only when it returns `true`.
+private final class AtomicFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var claimed = false
 
+    /// Returns `true` exactly once; all subsequent calls return `false`.
     func claim() -> Bool {
         lock.lock()
         defer { lock.unlock() }
