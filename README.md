@@ -98,13 +98,13 @@ Download the latest native macOS `.dmg` from [GitHub Releases](https://github.co
 
 Open the disk image, drag `Metria.app` to `Applications`, and launch it from Finder or Spotlight. Metria runs in the menu bar and does not open a regular application window.
 
-> **macOS warns that Metria can't be opened or is from an unidentified developer?** Releases are ad hoc signed but not yet notarized with an Apple Developer ID (see [note below](#run-in-development)), so macOS Gatekeeper flags the downloaded app — this does not mean the file is corrupted. Open **System Settings → Privacy & Security**, scroll to the Metria warning, and choose **Open Anyway**, then confirm in the dialog that follows. If that option isn't available, remove the quarantine attribute in Terminal instead:
+Releases are signed with an Apple Developer ID and notarized by Apple, so macOS opens them without a Gatekeeper warning.
+
+> **Running v0.2.4 or earlier and macOS says Metria can't be opened or is from an unidentified developer?** Those builds were only ad hoc signed. Updating through **Check for Updates** moves you to a notarized build. To open an old build anyway, go to **System Settings → Privacy & Security**, scroll to the Metria warning, and choose **Open Anyway**, or remove the quarantine attribute in Terminal:
 >
 > ```sh
 > xattr -cr /Applications/Metria.app
 > ```
->
-> Then launch the app normally.
 
 ### Run in development
 
@@ -138,11 +138,33 @@ xcodebuild -project apps/macos-native/Metria.xcodeproj -scheme Metria -configura
 ```
 
 The generated `Metria.app` is at `.build/xcode/Build/Products/Release/Metria.app`.
-The Xcode project disables signing by default for local development. A future
-Developer ID build can override `CODE_SIGNING_ALLOWED`, `CODE_SIGNING_REQUIRED`,
-and `CODE_SIGN_IDENTITY` from the command line or an xcconfig.
+The Xcode project disables signing so local builds need no certificate;
+`package-macos.sh` signs the built bundle afterward.
 
-This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `macos-v*` tag is pushed, then publish a signed Sparkle appcast per architecture through the dedicated `macos-latest` update channel (Sparkle's `generate_appcast` cannot mix two architectures under one bundle version, so each build points at its own feed). Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Apple Developer ID signing and notarization are optional while the project is in development; without them, the archive is only ad hoc signed and macOS Gatekeeper will still show an unidentified-developer warning.
+This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Releases build Intel and Apple Silicon archives automatically when a `macos-v*` tag is pushed, then publish a signed Sparkle appcast per architecture through the dedicated `macos-latest` update channel (Sparkle's `generate_appcast` cannot mix two architectures under one bundle version, so each build points at its own feed). Configure `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY` for automatic updates. Release builds must be Developer ID signed and notarized; the workflow fails if any signing secret is missing.
+
+#### Developer ID signing and notarization
+
+`package-macos.sh` signs with hardened runtime when `CODESIGN_IDENTITY` names a Developer ID certificate, signing Sparkle's helpers inside-out and applying `apps/macos-native/Metria.entitlements` to the app. When `NOTARY_PROFILE` names a `notarytool` keychain profile, it also notarizes and staples both the app (shipped in the Sparkle zip) and the disk image. Without `CODESIGN_IDENTITY`, it falls back to ad hoc signing for local testing.
+
+To produce a notarized build locally, store notary credentials once (use an [app-specific password](https://account.apple.com) or an App Store Connect API key) and pass both variables:
+
+```sh
+xcrun notarytool store-credentials metria-notary --apple-id <apple-id> --team-id <team-id>
+CODESIGN_IDENTITY="Developer ID Application: <name> (<team-id>)" NOTARY_PROFILE=metria-notary \
+  bash apps/macos-native/scripts/package-macos.sh
+```
+
+The release workflow reads these repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `APPLE_CERTIFICATE_BASE64` | Base64 of the Developer ID Application certificate and private key exported as `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | Password chosen when exporting the `.p12` |
+| `APPLE_SIGNING_IDENTITY` | Full identity name, e.g. `Developer ID Application: <name> (<team-id>)` |
+| `APPLE_NOTARY_KEY_BASE64` | Base64 of an App Store Connect API key (`AuthKey_<id>.p8`) with the Developer role |
+| `APPLE_NOTARY_KEY_ID` | That API key's ID |
+| `APPLE_NOTARY_ISSUER` | The App Store Connect issuer ID |
 
 To publish a native macOS release:
 

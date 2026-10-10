@@ -58,13 +58,34 @@ if [[ -n "${SPARKLE_FEED_URL:-}" && -n "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Add :SURequireSignedFeed bool true" "$PLIST"
 fi
 
+ENTITLEMENTS="$ROOT_DIR/apps/macos-native/Metria.entitlements"
+DEVELOPER_ID_SIGNED=0
 if [[ -n "${CODESIGN_IDENTITY:-}" && "$CODESIGN_IDENTITY" != "-" ]]; then
-    codesign --deep --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
+    DEVELOPER_ID_SIGNED=1
+    sign() { codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$@"; }
+    # Notarization rejects `--deep`-signed bundles whose nested helpers lack
+    # hardened runtime or a secure timestamp, so sign inside-out the way
+    # Sparkle's documentation prescribes for non-sandboxed apps.
+    SPARKLE="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework/Versions/B"
+    if [[ -d "$SPARKLE" ]]; then
+        sign "$SPARKLE/XPCServices/Installer.xpc"
+        sign --preserve-metadata=entitlements "$SPARKLE/XPCServices/Downloader.xpc"
+        sign "$SPARKLE/Autoupdate"
+        sign "$SPARKLE/Updater.app"
+    fi
+    for framework in "$APP_BUNDLE"/Contents/Frameworks/*.framework; do
+        [[ -e "$framework" ]] || continue
+        sign "$framework"
+    done
+    sign --entitlements "$ENTITLEMENTS" "$APP_BUNDLE"
 else
     printf '%s\n' "Warning: no Developer ID configured; ad hoc signing the release archive so Gatekeeper treats it as an unidentified-developer app instead of reporting it as damaged."
     codesign --deep --force --sign - "$APP_BUNDLE"
 fi
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+if [[ "$DEVELOPER_ID_SIGNED" == 1 ]]; then
+    codesign -d --entitlements - "$APP_BUNDLE" 2>/dev/null | grep -q "com.apple.security.automation.apple-events"
+fi
 
 # Styles the DMG installer window via Finder's `tell disk` / container window
 # API (create-dmg style). Opening a custom -mountpoint with Finder window 1
@@ -233,6 +254,12 @@ if ! build_styled_dmg "$BUILD_DIR/dmg-root" "$DMG_PATH" "$APP_NAME"; then
 fi
 
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+    if [[ "$DEVELOPER_ID_SIGNED" != 1 ]]; then
+        printf '%s\n' "Error: NOTARY_PROFILE requires a Developer ID CODESIGN_IDENTITY." >&2
+        exit 1
+    fi
+    # Notarize the app first so the Sparkle zip carries a stapled ticket, then
+    # rebuild both archives from the stapled bundle.
     xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
     xcrun stapler staple "$APP_BUNDLE"
     rm "$ZIP_PATH"
@@ -247,6 +274,19 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
         rm -f "$BUILD_DIR/.dmg-scratch.dmg"
         hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
     fi
+
+    # The disk image is what users download, so it needs its own signature and
+    # stapled ticket for Gatekeeper to accept it offline.
+    codesign --force --timestamp --sign "$CODESIGN_IDENTITY" "$DMG_PATH"
+    xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$DMG_PATH"
+
+    xcrun stapler validate "$APP_BUNDLE"
+    xcrun stapler validate "$DMG_PATH"
+    spctl --assess --type execute --verbose=2 "$APP_BUNDLE"
+    spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG_PATH"
+elif [[ "$DEVELOPER_ID_SIGNED" == 1 ]]; then
+    codesign --force --timestamp --sign "$CODESIGN_IDENTITY" "$DMG_PATH"
 fi
 
 rm -rf "$BUILD_DIR/dmg-root"

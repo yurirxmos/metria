@@ -15,7 +15,7 @@ let package = Package(
             name: "Metria",
             dependencies: ["MetriaCore", .product(name: "Sparkle", package: "Sparkle")],
              path: ".",
-             exclude: ["AGENTS.md", "README.md", "LICENSE", ".build", "dist", ".github", "plans", "apps/macos-native/Resources", "apps/macos-native/Sources/MetriaCore", "apps/macos-native/Metria.xcodeproj", "apps/macos-native/project.yml", "apps/macos-native/scripts", "apps/pwa/bun.lock", "apps/pwa/src", "apps/pwa/package.json", "apps/pwa/package-lock.json", "apps/pwa/tailwind.config.js", "apps/pwa/wrangler.jsonc", "apps/pwa/public/tailwind.input.css", "apps/pwa/public/metria-logo.png", "apps/pwa/public/metria-mascot.png"],
+             exclude: ["AGENTS.md", "README.md", "LICENSE", ".build", "dist", ".github", "plans", "apps/macos-native/Resources", "apps/macos-native/Metria.entitlements", "apps/macos-native/Sources/Metria/InfoPlist.xcstrings", "apps/macos-native/Sources/MetriaCore", "apps/macos-native/Metria.xcodeproj", "apps/macos-native/project.yml", "apps/macos-native/scripts", "apps/pwa/bun.lock", "apps/pwa/src", "apps/pwa/package.json", "apps/pwa/package-lock.json", "apps/pwa/tailwind.config.js", "apps/pwa/wrangler.jsonc", "apps/pwa/public/tailwind.input.css", "apps/pwa/public/metria-logo.png", "apps/pwa/public/metria-mascot.png"],
             sources: [
                 "apps/macos-native/Sources/Metria/MetriaApp.swift",
                 "apps/macos-native/Sources/Metria/MetriaResources.swift",

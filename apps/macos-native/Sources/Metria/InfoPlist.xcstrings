@@ -1,0 +1,42 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSAppleEventsUsageDescription" : {
+      "comment" : "Privacy prompt shown when Metria opens Terminal to run a provider's reconnect command.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metria opens Terminal to run a provider's reconnect command."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Metria abre o Terminal para executar o comando de reconexão de um provedor."
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "Privacy prompt shown when Metria serves the iPhone companion on the local network.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metria serves the iPhone companion on your local network."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Metria disponibiliza o app complementar do iPhone na sua rede local."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
