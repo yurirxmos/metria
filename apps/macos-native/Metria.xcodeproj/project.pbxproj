@@ -21,6 +21,7 @@
 		5C570FEB062A2BFD5F60500B /* ProviderActivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB5708106721FFBC18754EDD /* ProviderActivityMonitor.swift */; };
 		617E9F66F43072EBF15E76C5 /* LocalNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18B16A90CF8351DF99C63A8A /* LocalNetwork.swift */; };
 		636C3963D32BD250319A58EF /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36216E6ACB911FA08CA36234 /* Updater.swift */; };
+		665565C897AA8306286F7385 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8BF5DCB7225CFA6A04916BC2 /* InfoPlist.xcstrings */; };
 		6EF9BB36424EF416AAE77439 /* KeychainReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F37E9B9BF1481EC13F0AB9B /* KeychainReader.swift */; };
 		9309C7F6C13A860ADBCF4BFA /* MetriaCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 8EB81A191BD1F3F9D21426FB /* MetriaCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		9401FE6A4D61FC25C4CADA12 /* ProviderRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B98B0A12299F11B2D7262C2 /* ProviderRegistry.swift */; };
@@ -81,6 +82,7 @@
 		488A30C52B2A951130A87634 /* OpenCodeGoProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeGoProvider.swift; sourceTree = "<group>"; };
 		5F76937A0473449017F3EB57 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		820924689FDBC3107D06765C /* ProviderKind+Presentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ProviderKind+Presentation.swift"; sourceTree = "<group>"; };
+		8BF5DCB7225CFA6A04916BC2 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		8EB81A191BD1F3F9D21426FB /* MetriaCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MetriaCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		8F37E9B9BF1481EC13F0AB9B /* KeychainReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainReader.swift; sourceTree = "<group>"; };
 		942FF095F80398F2F48468E8 /* LocalPWAServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPWAServer.swift; sourceTree = "<group>"; };
@@ -113,6 +115,7 @@
 		32231B4583EDA193B07D0545 /* Metria */ = {
 			isa = PBXGroup;
 			children = (
+				8BF5DCB7225CFA6A04916BC2 /* InfoPlist.xcstrings */,
 				D588191EB0695B9A4FC447E9 /* Localizable.xcstrings */,
 				18B16A90CF8351DF99C63A8A /* LocalNetwork.swift */,
 				942FF095F80398F2F48468E8 /* LocalPWAServer.swift */,
@@ -278,6 +281,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				989E9729C42611755710CD7C /* AppIcon.icon in Resources */,
+				665565C897AA8306286F7385 /* InfoPlist.xcstrings in Resources */,
 				FB1F9F0C6990C4A373397544 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -434,6 +438,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Metria;
 				INFOPLIST_KEY_LSMultipleInstancesProhibited = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Metria opens Terminal to run a provider's reconnect command.";
 				INFOPLIST_KEY_NSHighResolutionCapable = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Metria serves the iPhone companion on your local network.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -490,6 +495,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Metria;
 				INFOPLIST_KEY_LSMultipleInstancesProhibited = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Metria opens Terminal to run a provider's reconnect command.";
 				INFOPLIST_KEY_NSHighResolutionCapable = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Metria serves the iPhone companion on your local network.";
 				LD_RUNPATH_SEARCH_PATHS = (

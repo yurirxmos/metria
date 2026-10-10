@@ -14,6 +14,10 @@ on:
 permissions:
   contents: write
 
+env:
+  # Team of the Developer ID certificate; public in every signed build.
+  APPLE_TEAM_ID: YH99T2BXD9
+
 jobs:
   package:
     strategy:
@@ -41,9 +45,15 @@ jobs:
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
         run: |
-          if [[ -z "$APPLE_CERTIFICATE_BASE64" ]]; then
-            exit 0
-          fi
+          # Releases ship Developer ID signed and notarized; refuse to fall back
+          # to an ad hoc build that Gatekeeper would block for every user.
+          for secret in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+            APPLE_NOTARY_KEY_BASE64 APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER; do
+            if [[ -z "${!secret}" ]]; then
+              printf 'Missing required secret: %s\n' "$secret" >&2
+              exit 1
+            fi
+          done
 
           keychain_path="$RUNNER_TEMP/metria-signing.keychain-db"
           keychain_password="$(openssl rand -hex 16)"
@@ -60,23 +70,26 @@ jobs:
 
           printf 'CODESIGN_IDENTITY=%s\n' "$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
-          if [[ -n "$APPLE_NOTARY_KEY_BASE64" ]]; then
-            printf '%s' "$APPLE_NOTARY_KEY_BASE64" | base64 --decode > "$notary_key_path"
-            xcrun notarytool store-credentials metria-notary \
-              --key "$notary_key_path" \
-              --key-id "$APPLE_NOTARY_KEY_ID" \
-              --issuer "$APPLE_NOTARY_ISSUER"
-            printf 'NOTARY_PROFILE=metria-notary\n' >> "$GITHUB_ENV"
-          fi
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path" >/dev/null
+          security find-identity -v -p codesigning "$keychain_path" | grep -qF "$APPLE_SIGNING_IDENTITY"
+
+          printf '%s' "$APPLE_NOTARY_KEY_BASE64" | base64 --decode > "$notary_key_path"
+          xcrun notarytool store-credentials metria-notary \
+            --key "$notary_key_path" \
+            --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER"
+          printf 'NOTARY_PROFILE=metria-notary\n' >> "$GITHUB_ENV"
+          rm -f "$certificate_path" "$notary_key_path"
 
       - name: Package app
         env:
           VERSION: ${{ inputs.version || github.ref_name }}
           SPARKLE_FEED_URL: https://github.com/${{ github.repository }}/releases/download/macos-latest/appcast-${{ matrix.arch }}.xml
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
-          CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           test -n "$SPARKLE_PUBLIC_ED_KEY"
+          test -n "$NOTARY_PROFILE"
           [[ "${VERSION#macos-v}" != "$VERSION" ]]
           bash apps/macos-native/scripts/package-macos.sh
 
@@ -87,6 +100,10 @@ jobs:
           test -f dist/Metria.app/Contents/Resources/app.css
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' dist/Metria.app/Contents/Info.plist)" = "13.0"
           lipo -archs dist/Metria.app/Contents/MacOS/Metria | grep -qx "$(uname -m)"
+          codesign --verify --deep --strict dist/Metria.app
+          codesign -dv dist/Metria.app 2>&1 | grep -q "TeamIdentifier=$APPLE_TEAM_ID"
+          xcrun stapler validate dist/Metria.app
+          spctl --assess --type execute --verbose=2 dist/Metria.app
 
       - name: Rename archive
         run: mv "dist/Metria-${{ inputs.version || github.ref_name }}-$(uname -m).zip" "dist/Metria-${{ inputs.version || github.ref_name }}-${{ matrix.arch }}.zip"

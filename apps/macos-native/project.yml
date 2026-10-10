@@ -63,6 +63,7 @@ targets:
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSHighResolutionCapable: YES
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: Metria serves the iPhone companion on your local network.
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: Metria opens Terminal to run a provider's reconnect command.
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
