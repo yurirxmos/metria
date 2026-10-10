@@ -65,21 +65,33 @@ jobs:
           security unlock-keychain -p "$keychain_password" "$keychain_path"
           printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$certificate_path"
           security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
-          security list-keychains -d user -s "$keychain_path" login.keychain-db
-          security default-keychain -s "$keychain_path"
+          # Prepend to the existing search list instead of replacing it or the
+          # default keychain: dropping the runner's keychains broke TLS trust for
+          # notarytool (NSURLErrorDomain -1200).
+          existing_keychains=()
+          while IFS= read -r line; do
+            line="${line#"${line%%[![:space:]]*}"}"
+            existing_keychains+=("${line//\"/}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$keychain_path" "${existing_keychains[@]}"
 
           printf 'CODESIGN_IDENTITY=%s\n' "$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path" >/dev/null
           security find-identity -v -p codesigning "$keychain_path" | grep -qF "$APPLE_SIGNING_IDENTITY"
 
+          rm -f "$certificate_path"
+
+          # Pass the API key straight to notarytool rather than storing a
+          # keychain profile, and fail here if Apple rejects it.
           printf '%s' "$APPLE_NOTARY_KEY_BASE64" | base64 --decode > "$notary_key_path"
-          xcrun notarytool store-credentials metria-notary \
-            --key "$notary_key_path" \
-            --key-id "$APPLE_NOTARY_KEY_ID" \
-            --issuer "$APPLE_NOTARY_ISSUER"
-          printf 'NOTARY_PROFILE=metria-notary\n' >> "$GITHUB_ENV"
-          rm -f "$certificate_path" "$notary_key_path"
+          xcrun notarytool history --key "$notary_key_path" --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER" >/dev/null
+          {
+            printf 'NOTARY_KEY_PATH=%s\n' "$notary_key_path"
+            printf 'NOTARY_KEY_ID=%s\n' "$APPLE_NOTARY_KEY_ID"
+            printf 'NOTARY_ISSUER=%s\n' "$APPLE_NOTARY_ISSUER"
+          } >> "$GITHUB_ENV"
 
       - name: Package app
         env:
@@ -89,7 +101,7 @@ jobs:
           CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           test -n "$SPARKLE_PUBLIC_ED_KEY"
-          test -n "$NOTARY_PROFILE"
+          test -n "$NOTARY_KEY_PATH"
           [[ "${VERSION#macos-v}" != "$VERSION" ]]
           bash apps/macos-native/scripts/package-macos.sh
 

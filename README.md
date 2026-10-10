@@ -98,9 +98,9 @@ Download the latest native macOS `.dmg` from [GitHub Releases](https://github.co
 
 Open the disk image, drag `Metria.app` to `Applications`, and launch it from Finder or Spotlight. Metria runs in the menu bar and does not open a regular application window.
 
-Releases are signed with an Apple Developer ID and notarized by Apple, so macOS opens them without a Gatekeeper warning.
+Starting with v0.2.5, releases are signed with an Apple Developer ID and notarized by Apple, so macOS opens them without a Gatekeeper warning.
 
-> **Running v0.2.4 or earlier and macOS says Metria can't be opened or is from an unidentified developer?** Those builds were only ad hoc signed. Updating through **Check for Updates** moves you to a notarized build. To open an old build anyway, go to **System Settings → Privacy & Security**, scroll to the Metria warning, and choose **Open Anyway**, or remove the quarantine attribute in Terminal:
+> **Running v0.2.4 or earlier and macOS says Metria can't be opened or is from an unidentified developer?** Those builds were only ad hoc signed. Updating through **Check for Updates**, or downloading the latest release, moves you to a notarized build. To open an old build anyway, go to **System Settings → Privacy & Security**, scroll to the Metria warning, and choose **Open Anyway**, or remove the quarantine attribute in Terminal:
 >
 > ```sh
 > xattr -cr /Applications/Metria.app
@@ -145,12 +145,12 @@ This creates `dist/Metria-<version>-<architecture>.zip` and `.dmg`. GitHub Relea
 
 #### Developer ID signing and notarization
 
-`package-macos.sh` signs with hardened runtime when `CODESIGN_IDENTITY` names a Developer ID certificate, signing Sparkle's helpers inside-out and applying `apps/macos-native/Metria.entitlements` to the app. When `NOTARY_PROFILE` names a `notarytool` keychain profile, it also notarizes and staples both the app (shipped in the Sparkle zip) and the disk image. Without `CODESIGN_IDENTITY`, it falls back to ad hoc signing for local testing.
+`package-macos.sh` signs with hardened runtime when `CODESIGN_IDENTITY` names a Developer ID certificate, signing Sparkle's helpers inside-out and applying `apps/macos-native/Metria.entitlements` to the app. When notary credentials are set, it also notarizes and staples both the app (shipped in the Sparkle zip) and the disk image, then checks both with `spctl`. Credentials come from either `NOTARY_PROFILE` (a `notarytool` keychain profile, for local builds) or `NOTARY_KEY_PATH`, `NOTARY_KEY_ID`, and `NOTARY_ISSUER` (an App Store Connect API key, which the release workflow uses). Without `CODESIGN_IDENTITY`, it falls back to ad hoc signing for local testing.
 
-To produce a notarized build locally, store notary credentials once (use an [app-specific password](https://account.apple.com) or an App Store Connect API key) and pass both variables:
+To produce a notarized build locally, store notary credentials in the keychain once (with an App Store Connect API key, or an [app-specific password](https://account.apple.com) via `--apple-id`/`--team-id`) and pass both variables:
 
 ```sh
-xcrun notarytool store-credentials metria-notary --apple-id <apple-id> --team-id <team-id>
+xcrun notarytool store-credentials metria-notary --key AuthKey_<key-id>.p8 --key-id <key-id> --issuer <issuer-id>
 CODESIGN_IDENTITY="Developer ID Application: <name> (<team-id>)" NOTARY_PROFILE=metria-notary \
   bash apps/macos-native/scripts/package-macos.sh
 ```

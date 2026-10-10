@@ -253,14 +253,24 @@ if ! build_styled_dmg "$BUILD_DIR/dmg-root" "$DMG_PATH" "$APP_NAME"; then
     hdiutil create -volname "$APP_NAME" -srcfolder "$BUILD_DIR/dmg-root" -ov -format UDZO "$DMG_PATH" >/dev/null
 fi
 
+# Notary credentials come from either a stored keychain profile
+# (NOTARY_PROFILE, for local builds) or an App Store Connect API key
+# (NOTARY_KEY_PATH + NOTARY_KEY_ID + NOTARY_ISSUER, for CI).
+notary_auth=()
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
+    notary_auth=(--keychain-profile "$NOTARY_PROFILE")
+elif [[ -n "${NOTARY_KEY_PATH:-}" ]]; then
+    notary_auth=(--key "$NOTARY_KEY_PATH" --key-id "${NOTARY_KEY_ID:?}" --issuer "${NOTARY_ISSUER:?}")
+fi
+
+if [[ ${#notary_auth[@]} -gt 0 ]]; then
     if [[ "$DEVELOPER_ID_SIGNED" != 1 ]]; then
-        printf '%s\n' "Error: NOTARY_PROFILE requires a Developer ID CODESIGN_IDENTITY." >&2
+        printf '%s\n' "Error: notarization requires a Developer ID CODESIGN_IDENTITY." >&2
         exit 1
     fi
     # Notarize the app first so the Sparkle zip carries a stapled ticket, then
     # rebuild both archives from the stapled bundle.
-    xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun notarytool submit "$ZIP_PATH" "${notary_auth[@]}" --wait
     xcrun stapler staple "$APP_BUNDLE"
     rm "$ZIP_PATH"
     ditto --norsrc -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
@@ -278,7 +288,7 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     # The disk image is what users download, so it needs its own signature and
     # stapled ticket for Gatekeeper to accept it offline.
     codesign --force --timestamp --sign "$CODESIGN_IDENTITY" "$DMG_PATH"
-    xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun notarytool submit "$DMG_PATH" "${notary_auth[@]}" --wait
     xcrun stapler staple "$DMG_PATH"
 
     xcrun stapler validate "$APP_BUNDLE"
