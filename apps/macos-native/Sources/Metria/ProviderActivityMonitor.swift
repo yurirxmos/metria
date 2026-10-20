@@ -62,7 +62,6 @@ final class ProviderActivityMonitor: ObservableObject {
     // means real activity and not just a running app.
     nonisolated private static let sessionDirectoriesByProvider: [ProviderKind: [String]] = [
         .codex: [".codex/sessions"],
-        .openCodeGo: [".local/share/opencode/storage"],
         .cursor: ["Library/Application Support/Cursor/User/globalStorage"],
         // Same reasoning as Cursor: agent activity lands in the globalStorage
         // database WAL, while a merely open IDE writes nothing.
@@ -146,10 +145,20 @@ final class ProviderActivityMonitor: ObservableObject {
         for kind in candidates {
             let matchingIDs = sessionDirectoriesByProviderID.keys.filter { $0.kind == kind }
             for id in matchingIDs {
-                guard let paths = sessionDirectoriesByProviderID[id] else { continue }
-                let hasRecent = paths.contains { path in
-                    let directory = homeDirectory.appendingPathComponent(path)
-                    return hasRecentFile(in: directory, since: cutoff)
+                let hasRecent: Bool
+                if kind == .openCodeGo {
+                    let databaseURL = OpenCodeGoProvider.databaseURL
+                    if FileManager.default.fileExists(atPath: databaseURL.path) {
+                        hasRecent = hasRecentFile(at: URL(fileURLWithPath: databaseURL.path + "-wal"), since: cutoff)
+                            || hasRecentFile(at: databaseURL, since: cutoff)
+                    } else {
+                        hasRecent = hasRecentFile(in: homeDirectory.appendingPathComponent(".local/share/opencode/storage"), since: cutoff)
+                    }
+                } else {
+                    guard let paths = sessionDirectoriesByProviderID[id] else { continue }
+                    hasRecent = paths.contains { path in
+                        hasRecentFile(in: homeDirectory.appendingPathComponent(path), since: cutoff)
+                    }
                 }
                 if hasRecent {
                     providers.insert(id)
@@ -172,6 +181,11 @@ final class ProviderActivityMonitor: ObservableObject {
         }.contains { date in
             date >= cutoff
         }
+    }
+
+    nonisolated private static func hasRecentFile(at file: URL, since cutoff: Date) -> Bool {
+        guard let modified = try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate else { return false }
+        return modified >= cutoff
     }
 
     deinit {

@@ -6,6 +6,16 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Conta alterada. Carregando uso…" } }
       }
     },
+    "The OpenCode Go API key expired. Create a new key in OpenCode Console." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A chave da API do OpenCode Go expirou. Crie uma nova chave no Console do OpenCode." } }
+      }
+    },
+    "Sign in to OpenCode Go to make usage available." : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Entre no OpenCode Go para disponibilizar os dados de uso." } }
+      }
+    },
     "API usage" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Uso da API" } }
