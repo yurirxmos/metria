@@ -1,10 +1,12 @@
 import Foundation
+import CryptoKit
 import MetriaCore
 
 /// Fetches Codex usage from the native Codex CLI credentials, falling back to local
 /// Codex CLI session files when those credentials are missing.
 struct CodexProvider: UsageProvider {
     let kind = ProviderKind.codex
+    var supportsAccountFingerprint: Bool { true }
     var isAvailable: Bool {
         FileManager.default.fileExists(atPath: codexAuthURL.path) || FileManager.default.fileExists(atPath: sessionsURL.path)
     }
@@ -13,8 +15,19 @@ struct CodexProvider: UsageProvider {
     static let weeklyLimitTitle = String(localized: "Weekly limit")
     let usageWindowTitles = [fiveHourLimitTitle, weeklyLimitTitle]
 
+    func accountFingerprint() -> String? {
+        guard let data = try? Data(contentsOf: codexAuthURL),
+              let auth = try? JSONDecoder().decode(CodexAuth.self, from: data),
+              let accountId = auth.tokens?.accountId else { return nil }
+        return Self.fingerprint(accountId)
+    }
+
     private var codexAuthURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/auth.json") }
     private var sessionsURL: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions") }
+
+    private static func fingerprint(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
     func fetch() async -> ProviderFetchResult {
         if let remoteResult = await fetchCodexUsage() {
@@ -122,13 +135,15 @@ struct CodexProvider: UsageProvider {
     }
     private func findCandidates() -> [(Date, URL)] {
         let fileManager = FileManager.default
+        let authModified = (try? fileManager.attributesOfItem(atPath: codexAuthURL.path)[.modificationDate]) as? Date
         let root = fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
         guard let enumerator = fileManager.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else {
             return []
         }
         var candidates: [(Date, URL)] = []
         for case let url as URL in enumerator where url.pathExtension == "jsonl" {
-            if let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? nil { candidates.append((date, url)) }
+            if let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? nil,
+               authModified == nil || date >= authModified! { candidates.append((date, url)) }
         }
         return candidates
     }

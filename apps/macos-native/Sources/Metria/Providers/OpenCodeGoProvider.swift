@@ -1,15 +1,22 @@
 import Foundation
+import CryptoKit
 import MetriaCore
 
 /// Fetches OpenCode Go usage using the API key OpenCode stores in its local auth file.
 struct OpenCodeGoProvider: UsageProvider {
     let kind = ProviderKind.openCodeGo
+    var supportsAccountFingerprint: Bool { true }
     var isAvailable: Bool { FileManager.default.fileExists(atPath: authURL.path) }
     let setupHint = String(localized: "Sign in to OpenCode Go to create a local API credential.")
     static let fiveHourLimitTitle = String(localized: "5-hour limit")
     static let weeklyLimitTitle = String(localized: "Weekly limit")
     static let monthlyLimitTitle = String(localized: "Monthly limit")
     let usageWindowTitles = [fiveHourLimitTitle, weeklyLimitTitle, monthlyLimitTitle]
+
+    func accountFingerprint() -> String? {
+        guard let key = try? readAPIKey() else { return nil }
+        return SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
     private var authURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(

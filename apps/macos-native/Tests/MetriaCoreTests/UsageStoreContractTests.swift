@@ -1,6 +1,17 @@
 import XCTest
 @testable import MetriaCore
 
+private final class FingerprintSource: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue: String?
+
+    init(_ value: String?) { storedValue = value }
+    var value: String? {
+        get { lock.lock(); defer { lock.unlock() }; return storedValue }
+        set { lock.lock(); defer { lock.unlock() }; storedValue = newValue }
+    }
+}
+
 private struct StubProvider: UsageProvider {
     let kind: ProviderKind
     let id: ProviderID
@@ -8,8 +19,11 @@ private struct StubProvider: UsageProvider {
     let setupHint: String
     let usageWindowTitles: [String]
     let result: ProviderFetchResult
+    var fingerprintSource: FingerprintSource? = nil
 
     func fetch() async -> ProviderFetchResult { result }
+    var supportsAccountFingerprint: Bool { fingerprintSource != nil }
+    func accountFingerprint() -> String? { fingerprintSource?.value }
 }
 
 @MainActor
@@ -28,14 +42,15 @@ final class UsageStoreContractTests: XCTestCase {
         super.tearDown()
     }
 
-    private func stubProvider(_ kind: ProviderKind, slug: String? = nil, available: Bool = true) -> StubProvider {
+    private func stubProvider(_ kind: ProviderKind, slug: String? = nil, available: Bool = true, fingerprint: String? = nil) -> StubProvider {
         StubProvider(
             kind: kind,
             id: ProviderID(kind: kind, slug: slug),
             isAvailable: available,
             setupHint: "Set up the provider.",
             usageWindowTitles: ["Today"],
-            result: .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil))
+            result: .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: nil)),
+            fingerprintSource: fingerprint.map(FingerprintSource.init)
         )
     }
 
@@ -120,5 +135,44 @@ final class UsageStoreContractTests: XCTestCase {
             store.enabledProviderIDs,
             Set([ProviderID(kind: .claude), ProviderID(kind: .cursor)])
         )
+    }
+
+    func testCachedUsageFromDifferentAccountIsDiscarded() {
+        defaults.set(#"[{"kind":"Claude","accountFingerprint":"old-account","windows":[{"title":"Today","percent":42}],"updatedAt":814187041.0}]"#.data(using: .utf8)!, forKey: "cachedProviderUsage")
+        let provider = stubProvider(.claude, fingerprint: "new-account")
+
+        let store = UsageStore(providers: [provider], defaults: defaults)
+
+        XCTAssertTrue(store.providers.isEmpty)
+    }
+
+    func testCachedUsageForSameAccountIsRetained() {
+        defaults.set(#"[{"kind":"Claude","accountFingerprint":"same-account","windows":[{"title":"Today","percent":42}],"updatedAt":814187041.0}]"#.data(using: .utf8)!, forKey: "cachedProviderUsage")
+        let provider = stubProvider(.claude, fingerprint: "same-account")
+
+        let store = UsageStore(providers: [provider], defaults: defaults)
+
+        XCTAssertEqual(store.providers.first?.windows.first?.percent, 42)
+    }
+
+    func testAccountSwitchClearsPreviousUsageAndRefreshesProvider() async {
+        defaults.set(#"[{"kind":"Claude","accountFingerprint":"old-account","windows":[{"title":"Today","percent":42}],"updatedAt":814187041.0}]"#.data(using: .utf8)!, forKey: "cachedProviderUsage")
+        let source = FingerprintSource("old-account")
+        let provider = StubProvider(
+            kind: .claude,
+            id: ProviderID(kind: .claude),
+            isAvailable: true,
+            setupHint: "Set up the provider.",
+            usageWindowTitles: ["Today"],
+            result: .empty(ProviderUsage(kind: .claude, windows: [], updatedAt: nil, error: "No usage.")),
+            fingerprintSource: source)
+        let store = UsageStore(providers: [provider], defaults: defaults)
+        source.value = "new-account"
+
+        await store.checkAccountFingerprints()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertTrue(store.providers.first?.windows.isEmpty ?? false)
+        XCTAssertNotEqual(store.providers.first?.windows.first?.percent, 42)
     }
 }

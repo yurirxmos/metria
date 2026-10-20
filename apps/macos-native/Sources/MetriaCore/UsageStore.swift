@@ -188,6 +188,8 @@ public struct ProviderUsage: Identifiable, Equatable {
     /// The account's subscription tier (e.g. "Max", "Pro", "Plus"), shown in place of the
     /// generic "Connected" badge when a provider can resolve it.
     public let planLabel: String?
+    public var accountFingerprint: String?
+    public var isSwitchingAccount: Bool
     public var windows: [UsageWindow]
     public var updatedAt: Date?
     public var error: String?
@@ -195,18 +197,20 @@ public struct ProviderUsage: Identifiable, Equatable {
     public var primary: UsageWindow? { windows.first }
 
     /// Account-scoped initializer, used by a multi-account provider (Claude).
-    public init(id: ProviderID, accountLabel: String? = nil, planLabel: String? = nil, windows: [UsageWindow], updatedAt: Date?, error: String?) {
+    public init(id: ProviderID, accountLabel: String? = nil, planLabel: String? = nil, accountFingerprint: String? = nil, isSwitchingAccount: Bool = false, windows: [UsageWindow], updatedAt: Date?, error: String?) {
         self.id = id
         self.accountLabel = accountLabel
         self.planLabel = planLabel
+        self.accountFingerprint = accountFingerprint
+        self.isSwitchingAccount = isSwitchingAccount
         self.windows = windows
         self.updatedAt = updatedAt
         self.error = error
     }
 
     /// Single-account convenience initializer, used by every provider that has one account.
-    public init(kind: ProviderKind, accountLabel: String? = nil, planLabel: String? = nil, windows: [UsageWindow], updatedAt: Date?, error: String?) {
-        self.init(id: ProviderID(kind: kind), accountLabel: accountLabel, planLabel: planLabel, windows: windows, updatedAt: updatedAt, error: error)
+    public init(kind: ProviderKind, accountLabel: String? = nil, planLabel: String? = nil, accountFingerprint: String? = nil, isSwitchingAccount: Bool = false, windows: [UsageWindow], updatedAt: Date?, error: String?) {
+        self.init(id: ProviderID(kind: kind), accountLabel: accountLabel, planLabel: planLabel, accountFingerprint: accountFingerprint, isSwitchingAccount: isSwitchingAccount, windows: windows, updatedAt: updatedAt, error: error)
     }
 }
 
@@ -231,11 +235,15 @@ public protocol UsageProvider {
     var isAvailable: Bool { get }
     var setupHint: String { get }
     var usageWindowTitles: [String] { get }
+    var supportsAccountFingerprint: Bool { get }
+    func accountFingerprint() -> String?
     func fetch() async -> ProviderFetchResult
 }
 
 public extension UsageProvider {
     var id: ProviderID { ProviderID(kind: kind) }
+    var supportsAccountFingerprint: Bool { false }
+    func accountFingerprint() -> String? { nil }
 }
 
 @MainActor
@@ -264,6 +272,9 @@ public final class UsageStore: ObservableObject {
     private var refreshOperation: Task<Void, Never>?
     private var scheduleTask: Task<Void, Never>?
     private var retryTasks: [ProviderID: Task<Void, Never>] = [:]
+    private var accountWatchTask: Task<Void, Never>?
+    private var knownFingerprints: [ProviderID: String] = [:]
+    private var pendingRefreshIDs: Set<ProviderID> = []
     private var retryUntilByProvider: [ProviderID: Date]
     private var retryMessageByProvider: [ProviderID: String]
     private var isRefreshing = false
@@ -283,6 +294,7 @@ public final class UsageStore: ObservableObject {
         }
 
         let kind: String
+        let accountFingerprint: String?
         let windows: [CachedWindow]
         let updatedAt: Date?
     }
@@ -317,14 +329,29 @@ public final class UsageStore: ObservableObject {
         if hasSavedKinds, !newlyAvailableIDs.isEmpty {
             defaults.set((Set(savedIDs).union(newlyAvailableIDs)).map(\.rawValue), forKey: enabledProvidersKey)
         }
-        let retryDates = Self.loadRetryDates(from: defaults, key: retryUntilKey)
+        var retryDates = Self.loadRetryDates(from: defaults, key: retryUntilKey)
             .filter { availableIDs.contains($0.key) && $0.value > Date() }
         self.retryUntilByProvider = retryDates
-        let retryMessages = Self.loadRetryMessages(from: defaults, key: retryMessagesKey)
+        var retryMessages = Self.loadRetryMessages(from: defaults, key: retryMessagesKey)
             .filter { retryDates[$0.key] != nil }
         self.retryMessageByProvider = retryMessages
-        let cachedProviders = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
-            .filter { availableIDs.contains($0.id) && initialEnabledProviderIDs.contains($0.id) }
+        let currentFingerprints = Dictionary(uniqueKeysWithValues: providers.filter(\.supportsAccountFingerprint).map { ($0.id, $0.accountFingerprint() ?? "") })
+        self.knownFingerprints = currentFingerprints
+        let allCachedProviders = Self.loadCachedUsage(from: defaults, key: cachedUsageKey)
+        var removedStaleRetry = false
+        for usage in allCachedProviders {
+            guard let current = currentFingerprints[usage.id], usage.accountFingerprint != current else { continue }
+            if retryDates.removeValue(forKey: usage.id) != nil { removedStaleRetry = true }
+            retryMessages[usage.id] = nil
+        }
+        self.retryUntilByProvider = retryDates
+        self.retryMessageByProvider = retryMessages
+        let cachedProviders = allCachedProviders
+            .filter { usage in
+                guard availableIDs.contains(usage.id), initialEnabledProviderIDs.contains(usage.id) else { return false }
+                guard let current = currentFingerprints[usage.id] else { return true }
+                return !current.isEmpty && usage.accountFingerprint == current
+            }
         self.providers = cachedProviders.map { usage in
             guard let retryUntil = retryDates[usage.id] else { return usage }
             var usage = usage
@@ -372,6 +399,7 @@ public final class UsageStore: ObservableObject {
             defaults.set(serializable, forKey: hiddenWindowTitlesKey)
         }
         updateVisibleProviders()
+        if removedStaleRetry { saveRetryDates() }
     }
 
     private func updateVisibleProviders() {
@@ -530,6 +558,38 @@ public final class UsageStore: ObservableObject {
         restoreRetryTasks()
         refresh(onlyStale: true)
         rescheduleTimer()
+        accountWatchTask?.cancel()
+        accountWatchTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, let self else { return }
+                await self.checkAccountFingerprints()
+            }
+        }
+    }
+
+    func checkAccountFingerprints() async {
+        let activeSources = sources.filter { enabledProviderIDs.contains($0.id) && $0.supportsAccountFingerprint }
+        let fingerprints = await Task.detached {
+            activeSources.compactMap { source -> (ProviderID, String)? in
+                guard source.supportsAccountFingerprint else { return nil }
+                return (source.id, source.accountFingerprint() ?? "")
+            }
+        }.value
+        for (id, fingerprint) in fingerprints where knownFingerprints[id] != fingerprint {
+            knownFingerprints[id] = fingerprint
+            retryTasks[id]?.cancel()
+            retryTasks[id] = nil
+            retryUntilByProvider[id] = nil
+            retryMessageByProvider[id] = nil
+            saveRetryDates()
+            let provider = sources.first(where: { $0.id == id })
+            let isAvailable = provider?.isAvailable ?? false
+            replace(ProviderUsage(id: id, accountFingerprint: fingerprint, isSwitchingAccount: isAvailable, windows: [], updatedAt: nil, error: isAvailable ? nil : provider?.setupHint))
+            updateVisibleProviders()
+            if isAvailable { pendingRefreshIDs.insert(id) }
+        }
+        runPendingRefreshes()
     }
 
     private func restoreRetryTasks() {
@@ -591,23 +651,34 @@ public final class UsageStore: ObservableObject {
             // check with no session) would otherwise sit unreported — still showing its
             // last cached/optimistic state — for as long as the slowest network provider
             // in the same batch takes, which reads as a visible flicker on launch.
-            await withTaskGroup(of: ProviderFetchResult.self) { group in
+            await withTaskGroup(of: (String?, ProviderFetchResult).self) { group in
                 for provider in providers {
-                    group.addTask { await provider.fetch() }
+                    group.addTask {
+                        let fingerprint = provider.supportsAccountFingerprint ? (provider.accountFingerprint() ?? "") : nil
+                        return (fingerprint, await provider.fetch())
+                    }
                 }
-                for await result in group {
+                for await (fingerprint, result) in group {
                     guard let self else { continue }
-                    self.apply(result)
+                    self.apply(result, fingerprint: fingerprint)
                     self.updateVisibleProviders()
                 }
             }
             guard let self else { return }
             self.isRefreshing = false
             self.refreshOperation = nil
+            self.runPendingRefreshes()
         }
     }
 
-    private func apply(_ result: ProviderFetchResult) {
+    private func runPendingRefreshes() {
+        guard !isRefreshing, !pendingRefreshIDs.isEmpty else { return }
+        let ids = pendingRefreshIDs
+        pendingRefreshIDs.removeAll()
+        refresh(providers: sources.filter { ids.contains($0.id) && $0.isAvailable })
+    }
+
+    private func apply(_ result: ProviderFetchResult, fingerprint: String?) {
         let id: ProviderID
         switch result {
         case .loaded(let usage), .empty(let usage): id = usage.id
@@ -622,8 +693,16 @@ public final class UsageStore: ObservableObject {
             return
         }
 
+        if let currentFingerprint = knownFingerprints[id], let fingerprint, currentFingerprint != fingerprint {
+            pendingRefreshIDs.insert(id)
+            return
+        }
+
         switch result {
         case .loaded(let usage):
+            var usage = usage
+            usage.accountFingerprint = fingerprint
+            usage.isSwitchingAccount = false
             replace(usage)
             retryUntilByProvider[usage.id] = nil
             retryMessageByProvider[usage.id] = nil
@@ -636,7 +715,11 @@ public final class UsageStore: ObservableObject {
                 retryTasks[usage.id] = nil
             }
         case .empty(let usage):
-            if let index = providers.firstIndex(where: { $0.id == usage.id }), !providers[index].windows.isEmpty {
+            var usage = usage
+            usage.accountFingerprint = fingerprint
+            usage.isSwitchingAccount = false
+            if let index = providers.firstIndex(where: { $0.id == usage.id }), !providers[index].windows.isEmpty,
+               providers[index].accountFingerprint == fingerprint {
                 providers[index].error = usage.error ?? String(localized: "No current usage data was returned. Showing the last successful update.")
             } else {
                 replace(usage)
@@ -650,7 +733,11 @@ public final class UsageStore: ObservableObject {
             let retryUntil = retryAfter.map { Date().addingTimeInterval($0) }
             let displayMessage = retryUntil.map { Self.retryMessage(message, until: $0) } ?? message
             if let index = providers.firstIndex(where: { $0.id == failedID }) {
-                providers[index].error = displayMessage
+                if providers[index].isSwitchingAccount || (fingerprint != nil && providers[index].accountFingerprint != fingerprint) {
+                    providers[index] = ProviderUsage(id: failedID, accountFingerprint: fingerprint, windows: [], updatedAt: nil, error: displayMessage)
+                } else {
+                    providers[index].error = displayMessage
+                }
             } else {
                 providers.append(ProviderUsage(id: failedID, windows: [], updatedAt: nil, error: displayMessage))
             }
@@ -721,6 +808,7 @@ public final class UsageStore: ObservableObject {
         let cached = providers.filter { !$0.windows.isEmpty }.map { usage in
             CachedUsage(
                 kind: usage.id.rawValue,
+                accountFingerprint: usage.accountFingerprint,
                 windows: usage.windows.map { .init(title: $0.title, percent: $0.percent, resetDate: $0.resetDate) },
                 updatedAt: usage.updatedAt
             )
@@ -735,6 +823,7 @@ public final class UsageStore: ObservableObject {
         return cached.compactMap { item in
             ProviderUsage(
                 id: ProviderID(rawValue: item.kind),
+                accountFingerprint: item.accountFingerprint,
                 windows: item.windows.map { UsageWindow(title: $0.title, percent: $0.percent, resetDate: $0.resetDate) },
                 updatedAt: item.updatedAt,
                 error: nil
@@ -745,6 +834,7 @@ public final class UsageStore: ObservableObject {
     deinit {
         refreshOperation?.cancel()
         scheduleTask?.cancel()
+        accountWatchTask?.cancel()
         retryTasks.values.forEach { $0.cancel() }
     }
 }

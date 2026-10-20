@@ -415,7 +415,7 @@ struct UsageCard: View {
                         .truncationMode(.middle)
                 }
                 Spacer()
-                if usage.error == nil, let planLabel = usage.planLabel {
+                if usage.error == nil, !usage.isSwitchingAccount, let planLabel = usage.planLabel {
                     Text(planLabel)
                         .font(.system(size: (isCompact ? 9 : 12) * scale, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -423,13 +423,13 @@ struct UsageCard: View {
                         .padding(.vertical, (isCompact ? 2 : 3) * scale)
                         .background(Capsule().fill(Color.white.opacity(0.12)))
                 } else {
-                    Circle().fill(usage.error == nil ? .green : .orange).frame(
+                    Circle().fill(usage.isSwitchingAccount ? Color.secondary : usage.error == nil ? .green : .orange).frame(
                         width: (isCompact ? 5 : 7) * scale, height: (isCompact ? 5 : 7) * scale)
                 }
             }
             if usage.windows.isEmpty {
                 Label(
-                    usage.error ?? "Waiting for usage data...",
+                    usage.isSwitchingAccount ? "Account changed. Loading usage…" : usage.error ?? "Waiting for usage data...",
                     systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill"
                 )
                 .font(.system(size: (isCompact ? 10 : 13) * scale))
@@ -531,7 +531,7 @@ struct DashboardUsageCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 if usage.windows.isEmpty {
                     Label(
-                        usage.error ?? "Waiting for usage data...",
+                        usage.isSwitchingAccount ? "Account changed. Loading usage…" : usage.error ?? "Waiting for usage data...",
                         systemImage: usage.error == nil ? "clock" : "exclamationmark.triangle.fill"
                     )
                     .font(.subheadline)

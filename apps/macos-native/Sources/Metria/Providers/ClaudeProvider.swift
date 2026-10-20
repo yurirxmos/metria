@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import MetriaCore
 
 /// Fetches Claude usage using the OAuth token Claude Code stores in the macOS Keychain.
@@ -11,6 +12,8 @@ struct ClaudeProvider: UsageProvider {
 
     var kind: ProviderKind { .claude }
     var id: ProviderID { profile.providerID }
+    var supportsAccountFingerprint: Bool { true }
+    func accountFingerprint() -> String? { profile.signedInAccount()?.uuid.map(Self.fingerprint) }
     var isAvailable: Bool { KeychainReader.hasClaudeCredentials(for: profile) }
     let setupHint = String(localized: "Install Claude Code and sign in to make usage available.")
     static let fiveHourLimitTitle = String(localized: "5-hour limit")
@@ -24,9 +27,14 @@ struct ClaudeProvider: UsageProvider {
     private static let accountEmailCache = ClaudeAccountEmailCache()
     private static let requestTimeout = 20.0
 
+    private static func fingerprint(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     func fetch() async -> ProviderFetchResult {
         do {
             var credentials = try KeychainReader.readClaudeCredentials(for: profile)
+            credentials = try await credentialsForCurrentAccount(credentials)
             var accessToken = credentials.accessToken
             let data: Data
             do {
@@ -66,6 +74,26 @@ struct ClaudeProvider: UsageProvider {
             FileHandle.standardError.write("[Claude \(id.rawValue)] error: \(error.localizedDescription)\n".data(using: .utf8)!)
             return .failed(id, error.localizedDescription, retryAfter: providerError?.retryAfter)
         }
+    }
+
+    private func credentialsForCurrentAccount(_ credentials: KeychainReader.ClaudeCredentials) async throws -> KeychainReader.ClaudeCredentials {
+        guard let currentUUID = profile.signedInAccount()?.uuid else { return credentials }
+        if let boundUUID = KeychainReader.boundClaudeAccountUUID(for: credentials), boundUUID == currentUUID { return credentials }
+        if KeychainReader.boundClaudeAccountUUID(for: credentials) == nil,
+           try await requestAccountProfile(token: credentials.accessToken).uuid == currentUUID {
+            KeychainReader.bindClaudeCredentials(to: currentUUID, for: profile)
+            return try KeychainReader.readClaudeCredentials(for: profile)
+        }
+        for attempt in 0..<6 {
+            KeychainReader.invalidateClaudeCredentialsCache(for: profile)
+            let refreshedCredentials = try KeychainReader.readClaudeCredentials(for: profile)
+            if try await requestAccountProfile(token: refreshedCredentials.accessToken).uuid == currentUUID {
+                KeychainReader.bindClaudeCredentials(to: currentUUID, for: profile)
+                return try KeychainReader.readClaudeCredentials(for: profile)
+            }
+            if attempt < 5 { try await Task.sleep(for: .seconds(5)) }
+        }
+        throw ProviderError.unavailable
     }
 
     /// Which account is signed in, in the order worth trusting: the address Claude Code
@@ -120,6 +148,10 @@ struct ClaudeProvider: UsageProvider {
     }
 
     private func requestAccountEmail(token: String) async throws -> String? {
+        try await requestAccountProfile(token: token).email
+    }
+
+    private func requestAccountProfile(token: String) async throws -> ProfileResponse.Account {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/profile")!)
         request.timeoutInterval = Self.requestTimeout
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -128,7 +160,7 @@ struct ClaudeProvider: UsageProvider {
         request.setValue("Metria/0.1", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ProviderError.unavailable }
-        return try JSONDecoder().decode(ProfileResponse.self, from: data).account.email
+        return try JSONDecoder().decode(ProfileResponse.self, from: data).account
     }
     private struct ClaudeResponse: Decodable {
         let fiveHour: Limit
@@ -163,6 +195,7 @@ struct ClaudeProvider: UsageProvider {
     private struct ProfileResponse: Decodable {
         struct Account: Decodable {
             let email: String?
+            let uuid: String?
         }
 
         let account: Account

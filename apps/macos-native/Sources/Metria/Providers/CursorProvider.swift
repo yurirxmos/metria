@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import MetriaCore
 
 /// Fetches Cursor usage using the JWT Cursor stores in its VS Code-derived
@@ -7,11 +8,17 @@ import MetriaCore
 /// research this is based on.
 struct CursorProvider: UsageProvider {
     let kind = ProviderKind.cursor
+    var supportsAccountFingerprint: Bool { true }
     let setupHint = String(localized: "Sign in to Cursor to make usage available.")
     static let cursorModelsTitle = String(localized: "Cursor models")
     static let apiUsageTitle = String(localized: "API usage")
     static let thisCycleTitle = String(localized: "This cycle")
     let usageWindowTitles = [cursorModelsTitle, apiUsageTitle]
+
+    func accountFingerprint() -> String? {
+        guard let email = stateStore.readItem("cursorAuth/cachedEmail") else { return nil }
+        return SHA256.hash(data: Data(email.lowercased().utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
     private var stateStore: CursorStateStore {
         CursorStateStore(databaseURL: FileManager.default.homeDirectoryForCurrentUser

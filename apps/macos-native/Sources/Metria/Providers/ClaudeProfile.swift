@@ -115,17 +115,24 @@ struct ClaudeProfile: Equatable, Hashable {
     /// Claude rings actually raise. It is also readable without a keychain prompt, which is
     /// the whole point of asking here.
     func signedInAddress() -> String? {
+        signedInAccount()?.email
+    }
+
+    func signedInAccount() -> (uuid: String?, email: String?)? {
         struct Config: Decodable {
-            struct Account: Decodable { let emailAddress: String? }
+            struct Account: Decodable {
+                let accountUuid: String?
+                let emailAddress: String?
+            }
             let oauthAccount: Account?
         }
         guard
             let data = try? Data(contentsOf: accountFileURL),
             let config = try? JSONDecoder().decode(Config.self, from: data),
-            let address = config.oauthAccount?.emailAddress,
-            !address.isEmpty
+            let account = config.oauthAccount,
+            account.accountUuid != nil || account.emailAddress != nil
         else { return nil }
-        return address
+        return (account.accountUuid, account.emailAddress)
     }
 
     /// Every keychain service a profile's token might be filed under, in the order to prefer

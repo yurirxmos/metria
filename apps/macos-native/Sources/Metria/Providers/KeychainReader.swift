@@ -8,8 +8,8 @@ import Security
 /// Code, not by Metria. macOS therefore shows an authorization prompt the first time Metria
 /// reads it — and because Metria's release builds are unsigned (`CODE_SIGNING_ALLOWED: NO`),
 /// macOS treats every rebuild as a different app and re-prompts each time. To avoid that, the
-/// first authorized read is cached to a file Metria owns; later launches read that file and
-/// never touch the Keychain again, exactly like the Antigravity/Codex providers do.
+/// first authorized read is cached to a file Metria owns, avoiding repeated access prompts
+/// while keeping an account-bound copy available for detecting Claude Code login changes.
 ///
 /// Every read is scoped to a `ClaudeProfile`: each profile keeps its own credential, its own
 /// on-disk cache file (matching the one Claude Code files its token under), and its own
@@ -101,6 +101,22 @@ enum KeychainReader {
 
         cachedClaudeCredentials[id.rawValue] = updatedCredentials
         ClaudeCredentialCache.save(for: id, document)
+    }
+
+    static func bindClaudeCredentials(to accountUUID: String, for profile: ClaudeProfile) {
+        let id = profile.providerID
+        lock.lock()
+        defer { lock.unlock() }
+        guard let credentials = cachedClaudeCredentials[id.rawValue] else { return }
+        var document = credentials.document
+        document["metriaBoundAccountUuid"] = accountUUID
+        guard let updated = makeCredentials(from: document) else { return }
+        cachedClaudeCredentials[id.rawValue] = updated
+        ClaudeCredentialCache.save(for: id, document)
+    }
+
+    static func boundClaudeAccountUUID(for credentials: ClaudeCredentials) -> String? {
+        credentials.document["metriaBoundAccountUuid"] as? String
     }
 
     static func invalidateClaudeCredentialsCache(for profile: ClaudeProfile) {

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import MetriaCore
 
 /// Fetches Command Code usage using the API key Command Code keeps in its local auth file
@@ -12,10 +13,16 @@ import MetriaCore
 /// to keep in sync as Command Code changes its tiers.
 struct CommandCodeProvider: UsageProvider {
     let kind = ProviderKind.commandCode
+    var supportsAccountFingerprint: Bool { true }
     let setupHint = String(localized: "Sign in to Command Code to create a local API credential.")
     static let fiveHourLimitTitle = String(localized: "5-hour limit")
     static let weeklyLimitTitle = String(localized: "Weekly limit")
     let usageWindowTitles = [fiveHourLimitTitle, weeklyLimitTitle]
+
+    func accountFingerprint() -> String? {
+        guard let key = try? readAPIKey() else { return nil }
+        return SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
     private static let apiHost = "https://api.commandcode.ai"
     private static let creditsPath = "/alpha/billing/credits"
