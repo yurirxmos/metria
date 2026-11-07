@@ -60,14 +60,16 @@ struct CodexProvider: UsageProvider {
                 return .failed(kind, error.localizedDescription, retryAfter: error.retryAfter)
             }
             let value = try JSONDecoder().decode(OpenAIUsageResponse.self, from: data)
+            let secondaryPercent = value.rateLimit.secondaryWindow.usedPercent
+            let effectivePrimary = UsageWindow.effectiveShortTermPercent(shortTerm: value.rateLimit.primaryWindow.usedPercent, longerTerm: secondaryPercent)
             return .loaded(ProviderUsage(
                 kind: kind,
                 accountLabel: credentials.idToken.flatMap(KeychainReader.tokenEmail) ?? KeychainReader.tokenEmail(credentials.accessToken),
                 planLabel: credentials.idToken.flatMap(planLabel),
                 windows: [
-                UsageWindow(title: Self.fiveHourLimitTitle, percent: value.rateLimit.primaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
-                UsageWindow(title: Self.weeklyLimitTitle, percent: value.rateLimit.secondaryWindow.usedPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
-            ], updatedAt: Date(), error: nil))
+                    UsageWindow(title: Self.fiveHourLimitTitle, percent: effectivePrimary, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.primaryWindow.resetAt))),
+                    UsageWindow(title: Self.weeklyLimitTitle, percent: secondaryPercent, resetDate: Date(timeIntervalSince1970: Double(value.rateLimit.secondaryWindow.resetAt)))
+                ], updatedAt: Date(), error: nil))
         } catch {
             let providerError = error as? ProviderError
             return .failed(kind, error.localizedDescription, retryAfter: providerError?.retryAfter)
@@ -107,7 +109,16 @@ struct CodexProvider: UsageProvider {
                 guard let limits else { continue }
                 let primary = parseLimit(limits["primary"] as? [String: Any], title: Self.fiveHourLimitTitle)
                 let secondary = parseLimit(limits["secondary"] as? [String: Any], title: Self.weeklyLimitTitle)
-                return .loaded(ProviderUsage(kind: kind, windows: [primary, secondary].compactMap { $0 }, updatedAt: candidate.0, error: nil))
+                let effectivePrimary = primary.map { p in
+                    UsageWindow(
+                        title: p.title,
+                        percent: secondary != nil ? UsageWindow.effectiveShortTermPercent(shortTerm: p.percent, longerTerm: secondary!.percent) : p.percent,
+                        resetDate: p.resetDate,
+                        usedCents: p.usedCents,
+                        limitCents: p.limitCents
+                    )
+                }
+                return .loaded(ProviderUsage(kind: kind, windows: [effectivePrimary, secondary].compactMap { $0 }, updatedAt: candidate.0, error: nil))
             }
         }
         return .empty(ProviderUsage(kind: kind, windows: [], updatedAt: nil, error: String(localized: "No recent local usage data was found. Sign in and use Codex once to create a usage snapshot.")))
