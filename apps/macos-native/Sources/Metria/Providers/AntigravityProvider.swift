@@ -134,14 +134,16 @@ struct AntigravityProvider: UsageProvider {
             slots.append((family, horizon, UsageWindow(title: title(for: family, horizon: horizon), percent: percent, resetDate: parseDate(parts[3]))))
         }
         // Fixed card order regardless of CLI line order; first line wins a slot.
-        let weeklyExhaustedFamilies: Set<Family> = Set(
-            Family.allCases.filter { family in
-                if let weeklyWindow = slots.first(where: { $0.0 == family && $0.1 == .weekly })?.2 {
-                    return weeklyWindow.percent >= 100
+        let weeklyExhaustedFamilies: [Family: Double] = {
+            var map: [Family: Double] = [:]
+            for family in Family.allCases {
+                if let weeklyWindow = slots.first(where: { $0.0 == family && $0.1 == .weekly })?.2,
+                   weeklyWindow.percent >= 100 {
+                    map[family] = weeklyWindow.percent
                 }
-                return false
             }
-        )
+            return map
+        }()
 
         let order: [(Family, Horizon)] = [
             (.gemini, .fiveHour), (.gemini, .weekly),
@@ -150,10 +152,10 @@ struct AntigravityProvider: UsageProvider {
         ]
         return order.compactMap { slot in
             guard let rawWindow = slots.first(where: { $0.0 == slot.0 && $0.1 == slot.1 })?.2 else { return nil }
-            if slot.1 == .fiveHour && weeklyExhaustedFamilies.contains(slot.0) {
+            if slot.1 == .fiveHour, let weeklyPercent = weeklyExhaustedFamilies[slot.0] {
                 return UsageWindow(
                     title: rawWindow.title,
-                    percent: UsageWindow.effectiveShortTermPercent(shortTerm: rawWindow.percent, longerTerm: 100),
+                    percent: UsageWindow.effectiveShortTermPercent(shortTerm: rawWindow.percent, longerTerm: weeklyPercent),
                     resetDate: rawWindow.resetDate,
                     usedCents: rawWindow.usedCents,
                     limitCents: rawWindow.limitCents
