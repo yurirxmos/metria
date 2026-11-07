@@ -147,10 +147,19 @@ struct CommandCodeProvider: UsageProvider {
         }
 
         var windows: [UsageWindow] {
-            [
-                windowLimits.fiveHour.flatMap { window($0, title: CommandCodeProvider.fiveHourLimitTitle) },
-                windowLimits.weekly.flatMap { window($0, title: CommandCodeProvider.weeklyLimitTitle) },
-            ].compactMap { $0 }
+            let weekly = windowLimits.weekly.flatMap { window($0, title: CommandCodeProvider.weeklyLimitTitle) }
+            let weeklyExhaustedPercent = (weekly?.percent ?? 0) >= 100 || windowLimits.weekly?.exceeded == true ? 100.0 : (weekly?.percent ?? 0)
+            let fiveHourRaw = windowLimits.fiveHour.flatMap { window($0, title: CommandCodeProvider.fiveHourLimitTitle) }
+            let fiveHour = fiveHourRaw.map { raw in
+                UsageWindow(
+                    title: raw.title,
+                    percent: UsageWindow.effectiveShortTermPercent(shortTerm: raw.percent, longerTerm: weeklyExhaustedPercent),
+                    resetDate: raw.resetDate,
+                    usedCents: raw.usedCents,
+                    limitCents: raw.limitCents
+                )
+            }
+            return [fiveHour, weekly].compactMap { $0 }
         }
 
         /// A window with no cap has no percentage worth drawing, and `exceeded` is then the

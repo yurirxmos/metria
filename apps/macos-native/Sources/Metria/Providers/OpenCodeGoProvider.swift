@@ -45,13 +45,15 @@ struct OpenCodeGoProvider: UsageProvider {
             do {
                 let data = try await requestUsage(key: credential.key)
                 let usage = try JSONDecoder().decode(OpenCodeGoResponse.self, from: data).usage
+                let longerTermExhaustedPercent = max(usage.weekly.percent, usage.monthly.percent)
+                let effectiveRolling = UsageWindow.effectiveShortTermPercent(shortTerm: usage.rolling.percent, longerTerm: longerTermExhaustedPercent)
                 return .loaded(
                     ProviderUsage(
                         kind: kind,
                         accountLabel: credential.accountLabel,
                         accountFingerprint: accountFingerprint(),
                         windows: [
-                            UsageWindow(title: Self.fiveHourLimitTitle, percent: usage.rolling.percent, resetDate: usage.rolling.resetDate),
+                            UsageWindow(title: Self.fiveHourLimitTitle, percent: effectiveRolling, resetDate: usage.rolling.resetDate),
                             UsageWindow(title: Self.weeklyLimitTitle, percent: usage.weekly.percent, resetDate: usage.weekly.resetDate),
                             UsageWindow(title: Self.monthlyLimitTitle, percent: usage.monthly.percent, resetDate: usage.monthly.resetDate),
                         ],
