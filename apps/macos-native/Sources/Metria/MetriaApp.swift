@@ -474,29 +474,7 @@ struct UsageCard: View {
 
 extension UsageWindow {
     func localizedTitle(for provider: ProviderKind, index: Int) -> String {
-        let titles: [String]
-        switch provider {
-        case .claude:
-            titles = [ClaudeProvider.fiveHourLimitTitle, ClaudeProvider.weeklyLimitTitle]
-        case .codex:
-            titles = [CodexProvider.fiveHourLimitTitle, CodexProvider.weeklyLimitTitle]
-        case .openCodeGo:
-            titles = [OpenCodeGoProvider.fiveHourLimitTitle, OpenCodeGoProvider.weeklyLimitTitle, OpenCodeGoProvider.monthlyLimitTitle]
-        case .cursor:
-            titles = [CursorProvider.cursorModelsTitle, CursorProvider.apiUsageTitle]
-        case .antigravity:
-            titles = [
-                AntigravityProvider.fiveHourGeminiTitle,
-                AntigravityProvider.weeklyGeminiTitle,
-                AntigravityProvider.fiveHourArgonTitle,
-                AntigravityProvider.weeklyArgonTitle,
-                AntigravityProvider.fiveHourOthersTitle,
-                AntigravityProvider.weeklyOthersTitle
-            ]
-        case .commandCode:
-            titles = [CommandCodeProvider.fiveHourLimitTitle, CommandCodeProvider.weeklyLimitTitle]
-        }
-        return titles.indices.contains(index) ? titles[index] : title
+        title
     }
 
     var resetText: String {
@@ -1029,15 +1007,36 @@ struct NotchRailItem: Identifiable, Equatable {
                 let hidden = hiddenWindows[usage.id] ?? []
                 let allWindows = usage.windows
 
+                if allWindows.isEmpty {
+                    for family in AntigravityNotchFamily.allCases where antigravityFamilies.contains(family.rawValue) {
+                        items.append(NotchRailItem(
+                            id: "antigravity-\(family.rawValue)",
+                            providerID: usage.id,
+                            kind: usage.kind,
+                            helpTitle: "\(usage.displayName) – \(family.displayName)",
+                            badgeText: family.badgeLabel,
+                            percent: 0,
+                            usage: usage
+                        ))
+                    }
+                    continue
+                }
+
                 for family in AntigravityNotchFamily.allCases where antigravityFamilies.contains(family.rawValue) {
                     let familyWindows: [UsageWindow]
                     switch family {
                     case .gemini:
-                        familyWindows = allWindows.filter { $0.title.contains("Gemini") && !$0.title.contains("Argon") }
+                        familyWindows = allWindows.filter {
+                            $0.title == AntigravityProvider.fiveHourGeminiTitle || $0.title == AntigravityProvider.weeklyGeminiTitle
+                        }
                     case .argon:
-                        familyWindows = allWindows.filter { $0.title.contains("Argon") }
+                        familyWindows = allWindows.filter {
+                            $0.title == AntigravityProvider.fiveHourArgonTitle || $0.title == AntigravityProvider.weeklyArgonTitle
+                        }
                     case .others:
-                        familyWindows = allWindows.filter { $0.title.contains("other") || $0.title.contains("Outros") || $0.title.contains("Claude") }
+                        familyWindows = allWindows.filter {
+                            $0.title == AntigravityProvider.fiveHourOthersTitle || $0.title == AntigravityProvider.weeklyOthersTitle
+                        }
                     }
 
                     guard !familyWindows.isEmpty else { continue }
@@ -2984,7 +2983,7 @@ extension NSMenu {
         // sized the rail for whatever was known at that instant) — keep the panel's own
         // frame in sync so it doesn't linger at a stale size.
         visibleProvidersObservation = store.$visibleProviders
-            .map(\.count)
+            .map { [weak self] _ in self?.notchMetrics.providerCount ?? 0 }
             .removeDuplicates()
             .sink { [weak self] _ in self?.resizeSidebarPanels() }
         applyNotchVisibility()
