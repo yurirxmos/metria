@@ -1945,6 +1945,7 @@ struct SettingsView: View {
     @State private var isLanguageRestartPromptShown = false
     @State private var selectedSection: SettingsSection = .general
     @State private var expandedProviderIDs: Set<ProviderID> = []
+    @State private var antigravityNotchFamilies: Set<String> = AntigravityNotchFamily.loadSelected()
 
     init(
         store: UsageStore,
@@ -2607,6 +2608,32 @@ struct SettingsView: View {
                         },
                         set: { store.setWindowVisible(title, for: id, isVisible: $0) }
                     ))
+            }
+
+            if id.kind == .antigravity {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Show on Notch")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    ForEach(AntigravityNotchFamily.allCases) { family in
+                        Toggle(family.displayName, isOn: Binding(
+                            get: { antigravityNotchFamilies.contains(family.rawValue) },
+                            set: { isSelected in
+                                var updated = antigravityNotchFamilies
+                                if isSelected {
+                                    updated.insert(family.rawValue)
+                                } else if updated.count > 1 {
+                                    updated.remove(family.rawValue)
+                                }
+                                antigravityNotchFamilies = updated
+                                AntigravityNotchFamily.saveSelected(updated)
+                                NotificationCenter.default.post(name: .antigravityNotchFamiliesDidChange, object: nil)
+                            }
+                        ))
+                        .disabled(antigravityNotchFamilies.contains(family.rawValue) && antigravityNotchFamilies.count == 1)
+                    }
+                }
+                .padding(.top, 4)
             }
 
             HStack {

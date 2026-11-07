@@ -181,3 +181,46 @@ private final class TimeoutState: @unchecked Sendable {
         return true
     }
 }
+
+public enum AntigravityNotchFamily: String, CaseIterable, Identifiable, Sendable {
+    case gemini = "gemini"
+    case argon = "argon"
+    case others = "others"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .gemini: String(localized: "Gemini")
+        case .argon: String(localized: "Gemini 4 Argon")
+        case .others: String(localized: "Claude & GPT")
+        }
+    }
+
+    public var badgeLabel: String {
+        switch self {
+        case .gemini: "Gemini"
+        case .argon: "Argon"
+        case .others: "Claude"
+        }
+    }
+
+    public static let defaultsKey = "antigravityNotchFamilies"
+    public static let defaultFamilies: Set<String> = Set(["gemini", "argon", "others"])
+
+    public static func loadSelected() -> Set<String> {
+        if let stored = UserDefaults.standard.stringArray(forKey: defaultsKey) {
+            let set = Set(stored)
+            return set.isEmpty ? defaultFamilies : set
+        }
+        return defaultFamilies
+    }
+
+    public static func saveSelected(_ families: Set<String>) {
+        UserDefaults.standard.set(Array(families), forKey: defaultsKey)
+    }
+}
+
+extension Notification.Name {
+    public static let antigravityNotchFamiliesDidChange = Notification.Name("antigravityNotchFamiliesDidChange")
+}
