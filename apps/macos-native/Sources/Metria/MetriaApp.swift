@@ -1009,6 +1009,71 @@ struct NotchMetrics {
         ?? .right
 }
 
+struct NotchRailItem: Identifiable, Equatable {
+    let id: String
+    let providerID: ProviderID
+    let kind: ProviderKind
+    let helpTitle: String
+    let badgeText: String?
+    let percent: Double
+    let usage: ProviderUsage
+
+    static func resolve(
+        from visibleProviders: [ProviderUsage],
+        hiddenWindows: [ProviderID: Set<String>],
+        antigravityFamilies: Set<String>
+    ) -> [NotchRailItem] {
+        var items: [NotchRailItem] = []
+        for usage in visibleProviders {
+            if usage.kind == .antigravity {
+                let hidden = hiddenWindows[usage.id] ?? []
+                let allWindows = usage.windows
+
+                for family in AntigravityNotchFamily.allCases where antigravityFamilies.contains(family.rawValue) {
+                    let familyWindows: [UsageWindow]
+                    switch family {
+                    case .gemini:
+                        familyWindows = allWindows.filter { $0.title.contains("Gemini") && !$0.title.contains("Argon") }
+                    case .argon:
+                        familyWindows = allWindows.filter { $0.title.contains("Argon") }
+                    case .others:
+                        familyWindows = allWindows.filter { $0.title.contains("other") || $0.title.contains("Outros") || $0.title.contains("Claude") }
+                    }
+
+                    guard !familyWindows.isEmpty else { continue }
+
+                    let visibleFamilyWindows = familyWindows.filter { !hidden.contains($0.title) }
+                    let primaryWindow = visibleFamilyWindows.first ?? familyWindows.first
+
+                    let percent = primaryWindow?.percent ?? 0
+                    let helpTitle = "\(usage.displayName) – \(family.displayName)"
+                    items.append(NotchRailItem(
+                        id: "antigravity-\(family.rawValue)",
+                        providerID: usage.id,
+                        kind: usage.kind,
+                        helpTitle: helpTitle,
+                        badgeText: family.badgeLabel,
+                        percent: percent,
+                        usage: usage
+                    ))
+                }
+            } else {
+                let percent = usage.primary?.percent ?? 0
+                items.append(NotchRailItem(
+                    id: usage.id.rawValue,
+                    providerID: usage.id,
+                    kind: usage.kind,
+                    helpTitle: usage.displayName,
+                    badgeText: nil,
+                    percent: percent,
+                    usage: usage
+                ))
+            }
+        }
+        return items
+    }
+}
+
 /// The floating surface itself: a compact provider rail — a vertical pill flush against
 /// the left/right screen edge, or a horizontal bar flush against the top/bottom edge —
 /// which grows on hover into a shelf revealing the hide/pin and settings controls at its
@@ -1024,10 +1089,19 @@ struct NotchContent: View {
     @State private var isHovered = false
     @State private var hasAppeared = false
     @State private var pendingHoverCollapse: DispatchWorkItem?
+    @State private var railVersion = 0
 
     private var isHiddenMode: Bool { mode.isHiddenMode }
+    private var railItems: [NotchRailItem] {
+        _ = railVersion
+        return NotchRailItem.resolve(
+            from: store.visibleProviders,
+            hiddenWindows: store.hiddenWindowTitlesByProvider,
+            antigravityFamilies: AntigravityNotchFamily.loadSelected()
+        )
+    }
     private var metrics: NotchMetrics {
-        NotchMetrics(size: mode.size, providerCount: store.visibleProviders.count)
+        NotchMetrics(size: mode.size, providerCount: railItems.count)
     }
     private var position: NotchPosition { mode.position }
     private var axis: NotchAxis { position.axis }
@@ -1196,6 +1270,9 @@ struct NotchContent: View {
         // system appearance; force Dark Mode's color resolution so any adaptive color
         // used here (now or later) reads correctly against it.
         .preferredColorScheme(.dark)
+        .onReceive(NotificationCenter.default.publisher(for: .antigravityNotchFamiliesDidChange)) { _ in
+            railVersion += 1
+        }
     }
 
     @ViewBuilder private var compactProviders: some View {
@@ -1207,25 +1284,25 @@ struct NotchContent: View {
     }
 
     private var providerRows: some View {
-        ForEach(Array(store.visibleProviders.enumerated()), id: \.element.id) { index, usage in
+        ForEach(Array(railItems.enumerated()), id: \.element.id) { index, item in
             let rowExtent =
                 metrics.providerItemHeight
-                + (index < store.visibleProviders.count - 1 ? metrics.providerSpacing : 0)
+                + (index < railItems.count - 1 ? metrics.providerSpacing : 0)
             let itemSize = metrics.size(
                 thickness: metrics.idleWidth, extent: metrics.providerItemHeight, axis: axis)
             let rowSize = metrics.size(thickness: metrics.idleWidth, extent: rowExtent, axis: axis)
             SidebarProviderItem(
-                usage: usage, scale: metrics.scale
+                item: item, scale: metrics.scale
             )
             .frame(width: itemSize.width, height: itemSize.height)
             .frame(width: rowSize.width, height: rowSize.height)
             .contentShape(Rectangle())
-            .help(usage.displayName)
+            .help(item.helpTitle)
             .onHover { isHovering in
-                onProviderHover(usage.id, index, isHovering)
+                onProviderHover(item.providerID, index, isHovering)
             }
             .onTapGesture {
-                onProviderTap(usage.id)
+                onProviderTap(item.providerID)
             }
         }
     }
@@ -1594,17 +1671,17 @@ struct AnimatedPercentageText: View, Animatable {
 }
 
 struct SidebarProviderItem: View {
-    let usage: ProviderUsage
+    let item: NotchRailItem
     let scale: CGFloat
     @State private var displayedPercent = 0.0
 
-    private var percent: Double { usage.primary?.percent ?? 0 }
+    private var percent: Double { item.percent }
     private var progressColor: Color {
-        ProviderAppearance.usageColor(for: usage.kind, percent: percent)
+        ProviderAppearance.usageColor(for: item.kind, percent: percent)
     }
 
     var body: some View {
-        VStack(spacing: 3 * scale) {
+        VStack(spacing: 2 * scale) {
             ZStack {
                 Circle().stroke(Color(white: 0.10), lineWidth: 5 * scale)
                 Circle().trim(from: 0, to: displayedPercent / 100)
@@ -1612,10 +1689,16 @@ struct SidebarProviderItem: View {
                         progressColor, style: StrokeStyle(lineWidth: 2 * scale, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
-                ProviderLogo(provider: usage.kind, size: 14 * scale).foregroundStyle(.white)
+                ProviderLogo(provider: item.kind, size: 14 * scale).foregroundStyle(.white)
             }
             .frame(width: 38 * scale, height: 38 * scale)
             AnimatedPercentageText(percent: displayedPercent, scale: scale)
+            if let badge = item.badgeText {
+                Text(badge)
+                    .font(.system(size: 7.5 * scale, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.65))
+                    .lineLimit(1)
+            }
         }
         .contentShape(Rectangle())
         .onAppear { animatePercent(to: percent, delay: 0.15) }
@@ -2850,6 +2933,7 @@ extension NSMenu {
     var visibleProvidersObservation: AnyCancellable?
     var enabledProvidersObservation: AnyCancellable?
     var hiddenWindowsObservation: AnyCancellable?
+    var antigravityFamiliesObservation: AnyCancellable?
     private let ntfyPublisher = NtfyPublisher()
     let pairing = PairingManager()
     private let updater = AppUpdater()
@@ -2886,9 +2970,15 @@ extension NSMenu {
             self.updateStatusItem(self.store.providers)
         }
         hiddenWindowsObservation = store.$hiddenWindowTitlesByProvider.sink { [weak self] _ in
-            guard let self, let provider = self.activeCardProvider else { return }
-            self.showCard(for: provider, index: self.activeCardIndex)
+            guard let self else { return }
+            self.resizeSidebarPanels()
+            if let provider = self.activeCardProvider {
+                self.showCard(for: provider, index: self.activeCardIndex)
+            }
         }
+        antigravityFamiliesObservation = NotificationCenter.default
+            .publisher(for: .antigravityNotchFamiliesDidChange)
+            .sink { [weak self] _ in self?.resizeSidebarPanels() }
         // A provider can be added to or dropped from `visibleProviders` after launch (e.g.
         // its very first refresh confirms or rules it out just after `configureSidebar()`
         // sized the rail for whatever was known at that instant) — keep the panel's own
@@ -3285,7 +3375,12 @@ extension NSMenu {
     private var notchGeometry = NotchGeometry.current()
     private let notchMode = NotchMode()
     private var notchMetrics: NotchMetrics {
-        NotchMetrics(size: notchMode.size, providerCount: store.visibleProviders.count)
+        let railItems = NotchRailItem.resolve(
+            from: store.visibleProviders,
+            hiddenWindows: store.hiddenWindowTitlesByProvider,
+            antigravityFamilies: AntigravityNotchFamily.loadSelected()
+        )
+        return NotchMetrics(size: notchMode.size, providerCount: railItems.count)
     }
     private var notchExpansion: CGFloat {
         notchMetrics.controlsHeight + notchMetrics.controlsGap + notchMetrics.controlsBottomSpace
