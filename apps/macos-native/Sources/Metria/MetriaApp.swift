@@ -395,7 +395,7 @@ struct UsageCard: View {
 
     private var isCompact: Bool { width < 390 }
     private var visibleWindows: [UsageWindow] {
-        usage.windows.filter { !hiddenWindowTitles.contains($0.title) }
+        usage.visibleWindows(hiddenTitles: hiddenWindowTitles)
     }
     /// The progress bar's available width, mirroring this view's own horizontal padding
     /// so it no longer needs a `GeometryReader` (and the extra layout pass that comes
@@ -508,7 +508,7 @@ struct DashboardUsageCard: View {
     @AppStorage(SpendFormat.defaultsKey) private var spendDisplay = SpendDisplay.both
 
     private var visibleWindows: [UsageWindow] {
-        usage.windows.filter { !hiddenWindowTitles.contains($0.title) }
+        usage.visibleWindows(hiddenTitles: hiddenWindowTitles)
     }
 
     var body: some View {
@@ -996,6 +996,17 @@ struct NotchRailItem: Identifiable, Equatable {
     let percent: Double
     let usage: ProviderUsage
 
+    static func familyTitles(for family: AntigravityNotchFamily) -> [String] {
+        switch family {
+        case .gemini:
+            return [AntigravityProvider.fiveHourGeminiTitle, AntigravityProvider.weeklyGeminiTitle]
+        case .argon:
+            return [AntigravityProvider.fiveHourArgonTitle, AntigravityProvider.weeklyArgonTitle]
+        case .others:
+            return [AntigravityProvider.fiveHourOthersTitle, AntigravityProvider.weeklyOthersTitle]
+        }
+    }
+
     static func resolve(
         from visibleProviders: [ProviderUsage],
         hiddenWindows: [ProviderID: Set<String>],
@@ -1009,6 +1020,10 @@ struct NotchRailItem: Identifiable, Equatable {
 
                 if allWindows.isEmpty {
                     for family in AntigravityNotchFamily.allCases where antigravityFamilies.contains(family.rawValue) {
+                        let titles = familyTitles(for: family)
+                        if !titles.isEmpty && titles.allSatisfy({ hidden.contains($0) }) {
+                            continue
+                        }
                         items.append(NotchRailItem(
                             id: "antigravity-\(family.rawValue)",
                             providerID: usage.id,
@@ -1023,6 +1038,11 @@ struct NotchRailItem: Identifiable, Equatable {
                 }
 
                 for family in AntigravityNotchFamily.allCases where antigravityFamilies.contains(family.rawValue) {
+                    let titles = familyTitles(for: family)
+                    if !titles.isEmpty && titles.allSatisfy({ hidden.contains($0) }) {
+                        continue
+                    }
+
                     let familyWindows: [UsageWindow]
                     switch family {
                     case .gemini:
@@ -1042,7 +1062,7 @@ struct NotchRailItem: Identifiable, Equatable {
                     guard !familyWindows.isEmpty else { continue }
 
                     let visibleFamilyWindows = familyWindows.filter { !hidden.contains($0.title) }
-                    guard let primaryWindow = visibleFamilyWindows.first else { continue }
+                    guard let primaryWindow = visibleFamilyWindows.first ?? familyWindows.first else { continue }
 
                     let percent = primaryWindow.percent
                     let helpTitle = "\(usage.displayName) – \(family.displayName)"
@@ -1076,6 +1096,34 @@ struct NotchRailItem: Identifiable, Equatable {
             }
         }
         return items
+    }
+}
+
+extension ProviderUsage {
+    func visibleWindows(hiddenTitles: Set<String>) -> [UsageWindow] {
+        if kind == .antigravity {
+            return windows.filter { window in
+                if !hiddenTitles.contains(window.title) {
+                    return true
+                }
+                let matchingFamily: AntigravityNotchFamily? = {
+                    if window.title == AntigravityProvider.fiveHourGeminiTitle || window.title == AntigravityProvider.weeklyGeminiTitle {
+                        return .gemini
+                    } else if window.title == AntigravityProvider.fiveHourArgonTitle || window.title == AntigravityProvider.weeklyArgonTitle {
+                        return .argon
+                    } else if window.title == AntigravityProvider.fiveHourOthersTitle || window.title == AntigravityProvider.weeklyOthersTitle {
+                        return .others
+                    }
+                    return nil
+                }()
+                guard let family = matchingFamily else { return false }
+                let familyTitles = NotchRailItem.familyTitles(for: family)
+                guard !familyTitles.allSatisfy({ hiddenTitles.contains($0) }) else { return false }
+                let directMatches = windows.filter { familyTitles.contains($0.title) && !hiddenTitles.contains($0.title) }
+                return directMatches.isEmpty
+            }
+        }
+        return windows.filter { !hiddenTitles.contains($0.title) }
     }
 }
 
