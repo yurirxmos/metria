@@ -485,7 +485,14 @@ extension UsageWindow {
         case .cursor:
             titles = [CursorProvider.cursorModelsTitle, CursorProvider.apiUsageTitle]
         case .antigravity:
-            titles = [AntigravityProvider.fiveHourGeminiTitle, AntigravityProvider.weeklyGeminiTitle, AntigravityProvider.fiveHourOthersTitle, AntigravityProvider.weeklyOthersTitle]
+            titles = [
+                AntigravityProvider.fiveHourGeminiTitle,
+                AntigravityProvider.weeklyGeminiTitle,
+                AntigravityProvider.fiveHourArgonTitle,
+                AntigravityProvider.weeklyArgonTitle,
+                AntigravityProvider.fiveHourOthersTitle,
+                AntigravityProvider.weeklyOthersTitle
+            ]
         case .commandCode:
             titles = [CommandCodeProvider.fiveHourLimitTitle, CommandCodeProvider.weeklyLimitTitle]
         }

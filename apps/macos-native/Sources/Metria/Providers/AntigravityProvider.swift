@@ -15,9 +15,15 @@ struct AntigravityProvider: UsageProvider {
     let setupHint = String(localized: "Install Antigravity and sign in to make usage available.")
     static let fiveHourGeminiTitle = String(localized: "5-hour Gemini")
     static let weeklyGeminiTitle = String(localized: "Weekly Gemini")
+    static let fiveHourArgonTitle = String(localized: "5-hour Gemini 4 Argon")
+    static let weeklyArgonTitle = String(localized: "Weekly Gemini 4 Argon")
     static let fiveHourOthersTitle = String(localized: "5-hour other models")
     static let weeklyOthersTitle = String(localized: "Weekly other models")
-    let usageWindowTitles = [fiveHourGeminiTitle, weeklyGeminiTitle, fiveHourOthersTitle, weeklyOthersTitle]
+    let usageWindowTitles = [
+        fiveHourGeminiTitle, weeklyGeminiTitle,
+        fiveHourArgonTitle, weeklyArgonTitle,
+        fiveHourOthersTitle, weeklyOthersTitle
+    ]
 
     /// A signed-out CLI blocks with no output (observed past 30 s), so every
     /// call carries a hard timeout that degrades to the setup hint.
@@ -94,7 +100,7 @@ struct AntigravityProvider: UsageProvider {
         return nil
     }
 
-    private enum Family { case gemini, others }
+    enum Family: String, CaseIterable, Sendable { case gemini, argon, others }
     private enum Horizon { case fiveHour, weekly }
 
     /// Parses `<group>\t<window>\t<NN>%\t<ISO8601>` lines. Matching is by
@@ -105,7 +111,15 @@ struct AntigravityProvider: UsageProvider {
         for rawLine in output.split(separator: "\n") {
             let parts = rawLine.split(separator: "\t").map { $0.trimmingCharacters(in: .whitespaces) }
             guard parts.count >= 4 else { continue }
-            let family: Family = parts[0].lowercased().contains("gemini") ? .gemini : .others
+            let group = parts[0].lowercased()
+            let family: Family
+            if group.contains("argon") {
+                family = .argon
+            } else if group.contains("gemini") {
+                family = .gemini
+            } else {
+                family = .others
+            }
             let window = parts[1].lowercased()
             let horizon: Horizon
             if window.contains("five hour") || window.contains("5-hour") || window.contains("5 hour") {
@@ -120,7 +134,11 @@ struct AntigravityProvider: UsageProvider {
             slots.append((family, horizon, UsageWindow(title: title(for: family, horizon: horizon), percent: percent, resetDate: parseDate(parts[3]))))
         }
         // Fixed card order regardless of CLI line order; first line wins a slot.
-        let order: [(Family, Horizon)] = [(.gemini, .fiveHour), (.gemini, .weekly), (.others, .fiveHour), (.others, .weekly)]
+        let order: [(Family, Horizon)] = [
+            (.gemini, .fiveHour), (.gemini, .weekly),
+            (.argon, .fiveHour), (.argon, .weekly),
+            (.others, .fiveHour), (.others, .weekly)
+        ]
         return order.compactMap { slot in slots.first { $0.0 == slot.0 && $0.1 == slot.1 }.map(\.2) }
     }
 
@@ -128,6 +146,8 @@ struct AntigravityProvider: UsageProvider {
         switch (family, horizon) {
         case (.gemini, .fiveHour): fiveHourGeminiTitle
         case (.gemini, .weekly): weeklyGeminiTitle
+        case (.argon, .fiveHour): fiveHourArgonTitle
+        case (.argon, .weekly): weeklyArgonTitle
         case (.others, .fiveHour): fiveHourOthersTitle
         case (.others, .weekly): weeklyOthersTitle
         }
