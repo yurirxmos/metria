@@ -15,9 +15,15 @@ struct AntigravityProvider: UsageProvider {
     let setupHint = String(localized: "Install Antigravity and sign in to make usage available.")
     static let fiveHourGeminiTitle = String(localized: "5-hour Gemini")
     static let weeklyGeminiTitle = String(localized: "Weekly Gemini")
+    static let fiveHourArgonTitle = String(localized: "5-hour Gemini 4 Argon")
+    static let weeklyArgonTitle = String(localized: "Weekly Gemini 4 Argon")
     static let fiveHourOthersTitle = String(localized: "5-hour other models")
     static let weeklyOthersTitle = String(localized: "Weekly other models")
-    let usageWindowTitles = [fiveHourGeminiTitle, weeklyGeminiTitle, fiveHourOthersTitle, weeklyOthersTitle]
+    let usageWindowTitles = [
+        fiveHourGeminiTitle, weeklyGeminiTitle,
+        fiveHourArgonTitle, weeklyArgonTitle,
+        fiveHourOthersTitle, weeklyOthersTitle
+    ]
 
     /// A signed-out CLI blocks with no output (observed past 30 s), so every
     /// call carries a hard timeout that degrades to the setup hint.
@@ -94,7 +100,7 @@ struct AntigravityProvider: UsageProvider {
         return nil
     }
 
-    private enum Family { case gemini, others }
+    enum Family: String, CaseIterable, Sendable { case gemini, argon, others }
     private enum Horizon { case fiveHour, weekly }
 
     /// Parses `<group>\t<window>\t<NN>%\t<ISO8601>` lines. Matching is by
@@ -105,7 +111,15 @@ struct AntigravityProvider: UsageProvider {
         for rawLine in output.split(separator: "\n") {
             let parts = rawLine.split(separator: "\t").map { $0.trimmingCharacters(in: .whitespaces) }
             guard parts.count >= 4 else { continue }
-            let family: Family = parts[0].lowercased().contains("gemini") ? .gemini : .others
+            let group = parts[0].lowercased()
+            let family: Family
+            if group.contains("argon") {
+                family = .argon
+            } else if group.contains("gemini") {
+                family = .gemini
+            } else {
+                family = .others
+            }
             let window = parts[1].lowercased()
             let horizon: Horizon
             if window.contains("five hour") || window.contains("5-hour") || window.contains("5 hour") {
@@ -120,14 +134,43 @@ struct AntigravityProvider: UsageProvider {
             slots.append((family, horizon, UsageWindow(title: title(for: family, horizon: horizon), percent: percent, resetDate: parseDate(parts[3]))))
         }
         // Fixed card order regardless of CLI line order; first line wins a slot.
-        let order: [(Family, Horizon)] = [(.gemini, .fiveHour), (.gemini, .weekly), (.others, .fiveHour), (.others, .weekly)]
-        return order.compactMap { slot in slots.first { $0.0 == slot.0 && $0.1 == slot.1 }.map(\.2) }
+        let weeklyExhaustedFamilies: [Family: Double] = {
+            var map: [Family: Double] = [:]
+            for family in Family.allCases {
+                if let weeklyWindow = slots.first(where: { $0.0 == family && $0.1 == .weekly })?.2,
+                   weeklyWindow.percent >= 100 {
+                    map[family] = weeklyWindow.percent
+                }
+            }
+            return map
+        }()
+
+        let order: [(Family, Horizon)] = [
+            (.gemini, .fiveHour), (.gemini, .weekly),
+            (.argon, .fiveHour), (.argon, .weekly),
+            (.others, .fiveHour), (.others, .weekly)
+        ]
+        return order.compactMap { slot in
+            guard let rawWindow = slots.first(where: { $0.0 == slot.0 && $0.1 == slot.1 })?.2 else { return nil }
+            if slot.1 == .fiveHour, let weeklyPercent = weeklyExhaustedFamilies[slot.0] {
+                return UsageWindow(
+                    title: rawWindow.title,
+                    percent: UsageWindow.effectiveShortTermPercent(shortTerm: rawWindow.percent, longerTerm: weeklyPercent),
+                    resetDate: rawWindow.resetDate,
+                    usedCents: rawWindow.usedCents,
+                    limitCents: rawWindow.limitCents
+                )
+            }
+            return rawWindow
+        }
     }
 
     private static func title(for family: Family, horizon: Horizon) -> String {
         switch (family, horizon) {
         case (.gemini, .fiveHour): fiveHourGeminiTitle
         case (.gemini, .weekly): weeklyGeminiTitle
+        case (.argon, .fiveHour): fiveHourArgonTitle
+        case (.argon, .weekly): weeklyArgonTitle
         case (.others, .fiveHour): fiveHourOthersTitle
         case (.others, .weekly): weeklyOthersTitle
         }
@@ -160,4 +203,47 @@ private final class TimeoutState: @unchecked Sendable {
         claimed = true
         return true
     }
+}
+
+public enum AntigravityNotchFamily: String, CaseIterable, Identifiable, Sendable {
+    case gemini = "gemini"
+    case argon = "argon"
+    case others = "others"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .gemini: String(localized: "Gemini")
+        case .argon: String(localized: "Gemini 4 Argon")
+        case .others: String(localized: "Claude & GPT")
+        }
+    }
+
+    public var badgeLabel: String {
+        switch self {
+        case .gemini: "Gemini"
+        case .argon: "Argon"
+        case .others: "Claude"
+        }
+    }
+
+    public static let defaultsKey = "antigravityNotchFamilies"
+    public static let defaultFamilies: Set<String> = Set(["gemini", "argon", "others"])
+
+    public static func loadSelected() -> Set<String> {
+        if let stored = UserDefaults.standard.stringArray(forKey: defaultsKey) {
+            let set = Set(stored)
+            return set.isEmpty ? defaultFamilies : set
+        }
+        return defaultFamilies
+    }
+
+    public static func saveSelected(_ families: Set<String>) {
+        UserDefaults.standard.set(Array(families), forKey: defaultsKey)
+    }
+}
+
+extension Notification.Name {
+    public static let antigravityNotchFamiliesDidChange = Notification.Name("antigravityNotchFamiliesDidChange")
 }

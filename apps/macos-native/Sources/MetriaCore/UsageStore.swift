@@ -23,6 +23,12 @@ public struct UsageWindow: Equatable, Identifiable {
     public func spendParts(_ display: SpendDisplay) -> SpendParts {
         SpendFormat.parts(usedCents: usedCents, limitCents: limitCents, display: display)
     }
+
+    /// Returns the short-term window percent (e.g. 5-hour limit), marking it as exhausted (at least 100%)
+    /// when the longer-term horizon (e.g. weekly or monthly limit) is at or above 100%.
+    public static func effectiveShortTermPercent(shortTerm: Double, longerTerm: Double) -> Double {
+        longerTerm >= 100 ? max(shortTerm, 100) : shortTerm
+    }
 }
 
 /// How a window that carries spend amounts prints its magnitude. Persisted by raw value

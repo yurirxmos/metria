@@ -58,13 +58,15 @@ struct ClaudeProvider: UsageProvider {
             }
             let value = try JSONDecoder().decode(ClaudeResponse.self, from: data)
             let accountEmail = await resolvedAccountEmail(credentials, accessToken: accessToken)
+            let weeklyPercent = value.sevenDay.utilization
+            let effectiveFiveHour = UsageWindow.effectiveShortTermPercent(shortTerm: value.fiveHour.utilization, longerTerm: weeklyPercent)
             return .loaded(ProviderUsage(
                 id: id,
                 accountLabel: accountEmail,
                 planLabel: KeychainReader.planLabel(from: credentials),
                 windows: [
-                    UsageWindow(title: Self.fiveHourLimitTitle, percent: value.fiveHour.utilization, resetDate: value.fiveHour.resetDate),
-                    UsageWindow(title: Self.weeklyLimitTitle, percent: value.sevenDay.utilization, resetDate: value.sevenDay.resetDate)
+                    UsageWindow(title: Self.fiveHourLimitTitle, percent: effectiveFiveHour, resetDate: value.fiveHour.resetDate),
+                    UsageWindow(title: Self.weeklyLimitTitle, percent: weeklyPercent, resetDate: value.sevenDay.resetDate)
                 ],
                 updatedAt: Date(),
                 error: nil

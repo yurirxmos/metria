@@ -56,6 +56,31 @@ final class UsageStoreContractTests: XCTestCase {
 
     // MARK: - SpendFormat
 
+    func testEffectiveShortTermPercentWhenLongerTermIsExhausted() {
+        // When weekly is 100% or above, short-term is forced to at least 100%
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 25.0, longerTerm: 100.0), 100.0)
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 10.0, longerTerm: 110.0), 100.0)
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 105.0, longerTerm: 100.0), 105.0)
+
+        // When weekly is below 100%, short-term remains untouched
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 25.0, longerTerm: 99.9), 25.0)
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 0.0, longerTerm: 0.0), 0.0)
+    }
+
+    func testPerFamilyExhaustionIsolation() {
+        // Exhausting one model family's weekly limit affects only that family's 5h window
+        let gemini5hRaw = 20.0
+        let geminiWeeklyRaw = 100.0
+        let others5hRaw = 15.0
+        let othersWeeklyRaw = 45.0
+
+        let gemini5hEffective = UsageWindow.effectiveShortTermPercent(shortTerm: gemini5hRaw, longerTerm: geminiWeeklyRaw)
+        let others5hEffective = UsageWindow.effectiveShortTermPercent(shortTerm: others5hRaw, longerTerm: othersWeeklyRaw)
+
+        XCTAssertEqual(gemini5hEffective, 100.0)
+        XCTAssertEqual(others5hEffective, 15.0)
+    }
+
     func testPercentageOnlyWindowsShowPercentageForAllDisplays() {
         for display in SpendDisplay.allCases {
             let parts = SpendFormat.parts(usedCents: nil, limitCents: nil, display: display)

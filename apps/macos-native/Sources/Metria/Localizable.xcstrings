@@ -31,6 +31,11 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gemini de 5 horas" } }
       }
     },
+    "5-hour Gemini 4 Argon" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gemini 4 Argon de 5 horas" } }
+      }
+    },
     "5-hour limit" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Limite de 5 horas" } }
@@ -121,6 +126,11 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Verificar Atualizações…" } }
       }
     },
+    "Claude & GPT" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Claude e GPT" } }
+      }
+    },
     "Choose each alert color and when it starts appearing." : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha a cor de cada alerta e quando ele começa a aparecer." } }
@@ -199,6 +209,16 @@
     "General" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Geral" } }
+      }
+    },
+    "Gemini" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gemini" } }
+      }
+    },
+    "Gemini 4 Argon" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gemini 4 Argon" } }
       }
     },
     "Hide" : {
@@ -596,6 +616,11 @@
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar notch" } }
       }
     },
+    "Show on Notch" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Exibir no Notch" } }
+      }
+    },
     "Show provider account email" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar e-mail da conta do provedor" } }
@@ -754,6 +779,11 @@
     "Weekly Gemini" : {
       "localizations" : {
         "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gemini semanal" } }
+      }
+    },
+    "Weekly Gemini 4 Argon" : {
+      "localizations" : {
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Gemini 4 Argon semanal" } }
       }
     },
     "Weekly limit" : {
