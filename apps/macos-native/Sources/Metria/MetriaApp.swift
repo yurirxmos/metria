@@ -1042,9 +1042,9 @@ struct NotchRailItem: Identifiable, Equatable {
                     guard !familyWindows.isEmpty else { continue }
 
                     let visibleFamilyWindows = familyWindows.filter { !hidden.contains($0.title) }
-                    let primaryWindow = visibleFamilyWindows.first ?? familyWindows.first
+                    guard let primaryWindow = visibleFamilyWindows.first else { continue }
 
-                    let percent = primaryWindow?.percent ?? 0
+                    let percent = primaryWindow.percent
                     let helpTitle = "\(usage.displayName) – \(family.displayName)"
                     items.append(NotchRailItem(
                         id: "antigravity-\(family.rawValue)",
@@ -1057,7 +1057,13 @@ struct NotchRailItem: Identifiable, Equatable {
                     ))
                 }
             } else {
-                let percent = usage.primary?.percent ?? 0
+                let hidden = hiddenWindows[usage.id] ?? []
+                let visibleWindows = usage.windows.filter { !hidden.contains($0.title) }
+                if !usage.windows.isEmpty && visibleWindows.isEmpty {
+                    continue
+                }
+                let primary = visibleWindows.first ?? usage.primary
+                let percent = primary?.percent ?? 0
                 items.append(NotchRailItem(
                     id: usage.id.rawValue,
                     providerID: usage.id,
@@ -2971,13 +2977,18 @@ extension NSMenu {
         hiddenWindowsObservation = store.$hiddenWindowTitlesByProvider.sink { [weak self] _ in
             guard let self else { return }
             self.resizeSidebarPanels()
+            self.updateStatusItem(self.store.providers)
             if let provider = self.activeCardProvider {
                 self.showCard(for: provider, index: self.activeCardIndex)
             }
         }
         antigravityFamiliesObservation = NotificationCenter.default
             .publisher(for: .antigravityNotchFamiliesDidChange)
-            .sink { [weak self] _ in self?.resizeSidebarPanels() }
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.resizeSidebarPanels()
+                self.updateStatusItem(self.store.providers)
+            }
         // A provider can be added to or dropped from `visibleProviders` after launch (e.g.
         // its very first refresh confirms or rules it out just after `configureSidebar()`
         // sized the rail for whatever was known at that instant) — keep the panel's own
@@ -3164,18 +3175,20 @@ extension NSMenu {
 
     private func updateStatusItem(_ providers: [ProviderUsage]) {
         let title = NSMutableAttributedString()
-        let usages = providers.sorted { $0.id.rawValue < $1.id.rawValue }.filter {
-            store.enabledProviderIDs.contains($0.id)
-        }
+        let railItems = NotchRailItem.resolve(
+            from: store.visibleProviders,
+            hiddenWindows: store.hiddenWindowTitlesByProvider,
+            antigravityFamilies: AntigravityNotchFamily.loadSelected()
+        )
 
-        for (index, usage) in usages.enumerated() {
+        for (index, item) in railItems.enumerated() {
             if index > 0 {
                 title.append(
                     NSAttributedString(
                         string: "  ·  ",
                         attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
             }
-            if let logo = ProviderAppearance.logo(for: usage.kind) {
+            if let logo = ProviderAppearance.logo(for: item.kind) {
                 let attachment = NSTextAttachment()
                 attachment.image = logo
                 attachment.bounds = NSRect(x: 0, y: -3, width: 16, height: 16)
@@ -3183,31 +3196,32 @@ extension NSMenu {
                 title.append(NSAttributedString(string: " "))
             }
             if showMenuBarProviderNames {
-                let name = usage.kind == .openCodeGo ? "Go" : usage.displayName
+                let name: String
+                if let badge = item.badgeText {
+                    name = badge
+                } else if item.kind == .openCodeGo {
+                    name = "Go"
+                } else {
+                    name = item.usage.displayName
+                }
                 title.append(
                     NSAttributedString(
                         string: "\(name) ",
                         attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
             }
-            if let primary = usage.primary {
-                var percentageAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
-                ]
-                if let color = menuBarAlertColor(for: primary.percent) {
-                    percentageAttributes[.foregroundColor] = color
-                }
-                title.append(
-                    NSAttributedString(
-                        string: "\(Int(primary.percent.rounded()))%", attributes: percentageAttributes))
-            } else {
-                title.append(
-                    NSAttributedString(
-                        string: "--", attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold)]))
+            var percentageAttributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold)
+            ]
+            if let color = menuBarAlertColor(for: item.percent) {
+                percentageAttributes[.foregroundColor] = color
             }
+            title.append(
+                NSAttributedString(
+                    string: "\(Int(item.percent.rounded()))%", attributes: percentageAttributes))
         }
         statusItem.button?.image = nil
         statusItem.button?.attributedTitle =
-            usages.isEmpty ? NSAttributedString(string: "--") : title
+            railItems.isEmpty ? NSAttributedString(string: "--") : title
     }
 
     private func configureStatusItem() {
