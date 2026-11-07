@@ -56,6 +56,17 @@ final class UsageStoreContractTests: XCTestCase {
 
     // MARK: - SpendFormat
 
+    func testEffectiveShortTermPercentWhenLongerTermIsExhausted() {
+        // When weekly is 100% or above, short-term is forced to at least 100%
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 25.0, longerTerm: 100.0), 100.0)
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 10.0, longerTerm: 110.0), 100.0)
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 105.0, longerTerm: 100.0), 105.0)
+
+        // When weekly is below 100%, short-term remains untouched
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 25.0, longerTerm: 99.9), 25.0)
+        XCTAssertEqual(UsageWindow.effectiveShortTermPercent(shortTerm: 0.0, longerTerm: 0.0), 0.0)
+    }
+
     func testPercentageOnlyWindowsShowPercentageForAllDisplays() {
         for display in SpendDisplay.allCases {
             let parts = SpendFormat.parts(usedCents: nil, limitCents: nil, display: display)
